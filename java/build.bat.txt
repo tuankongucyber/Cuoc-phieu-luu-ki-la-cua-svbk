@@ -1,0 +1,4 @@
+"C:\Program Files\Java\jdk-27\bin\javac.exe" *.java
+"C:\Program Files\Java\jdk-27\bin\jar.exe" cfe Game.jar Main *.class
+echo Dong goi file Game.jar thanh cong!
+pause
