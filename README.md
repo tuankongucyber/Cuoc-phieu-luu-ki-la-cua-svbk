@@ -10,6 +10,6 @@ Cốt truyện: sv bách khoa lạc vào các thế giới, giúp đỡ nv trong
 
 Đánh boss ẩn (Boss Mixi), hệ thống thành tựu các thứ, ending ẩn các thứ ( cái này t chưa nghĩ ra gì )
 
-Chắc nv cầm 3 vũ khí thôi, tổng 10 cái và các loại buff kiểu đánh nhanh, tăng đạn, tăng vùng cho đỡ phải nhiều vũ khí (Hoặc có khi là 5)
+Chắc nv cầm 4 vũ khí thôi, tổng 10 cái và các loại buff kiểu đánh nhanh, tăng đạn, tăng vùng cho đỡ phải nhiều vũ khí (Hoặc có khi là 5)
 
 hệ thống skill như né hoặc buff 2 súng (idk cảm giác quá liều, quá liều thì đừng thêm vào)
