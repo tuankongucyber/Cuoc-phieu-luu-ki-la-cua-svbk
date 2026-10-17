@@ -4,7 +4,7 @@ Cuộc phiêu lưu kì lạ của SVBK
 4 maps + 1 map đánh trùm, 1 map các loại quái khác nhau, phù hợp bối cảnh ae chọn ( kiểu ae thích jojo thì nhét asset jojo vào, tùy chỉnh cho quái from jojo, touhou cũng thế nói chung thể hiện đặc trưng là đc )
 khi tiêu diệt Boss sẽ đc cầm 1 vũ khí sang world khác
 
-Sự kiện, xuất hiện góc mini map (giải cứu, chạy đi nhặt đồ, cố thủ)
+Sự kiện xuất hiện ở mini map (giải cứu, chạy đi nhặt đồ, cố thủ).
 
 Cốt truyện: sv bách khoa lạc vào các thế giới, giúp đỡ nv trong giới đó rồi đánh bại con trùm với âm mưu phá đưa game mình xâm chiếm tgiới khác để ké fame 
 
