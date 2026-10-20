@@ -60,5 +60,11 @@ public abstract class Enemy extends Entity {
     }
 
     public double getContactDamage() { return contactDamage; }
+    public void applyDifficulty(Difficulty difficulty) {
+        maxHp *= difficulty.enemyHealth;
+        hp = maxHp;
+        speed *= difficulty.enemySpeed;
+        contactDamage *= difficulty.enemyDamage;
+    }
     public int getExpReward() { return expReward; }
 }

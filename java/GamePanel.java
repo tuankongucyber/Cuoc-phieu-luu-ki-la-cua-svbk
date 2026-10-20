@@ -1,5 +1,6 @@
 import javax.swing.JPanel;
 import javax.swing.Timer;
+import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.ArrayList;
@@ -18,12 +19,22 @@ public class GamePanel extends JPanel implements KeyListener, MouseListener, Mou
     public static final int SCREEN_HEIGHT = 750;
 
     public enum GameState {
+        START,
+        PAUSED,
+        SETTINGS,
         PLAYING,
         LEVEL_UP,
         GAME_OVER
     }
 
     private GameState state = GameState.PLAYING;
+    private GameState settingsReturnState = GameState.START;
+    private GameState pausedState = GameState.PLAYING;
+    private final JPanel menuPanel = new JPanel();
+    private Difficulty difficulty = Difficulty.NORMAL;
+    private Difficulty runDifficulty = Difficulty.NORMAL;
+    private boolean escapeHeld;
+
     private Timer gameTimer;
     private Random random = new Random();
     // Phòng Boss & Cổng dịch chuyển
@@ -68,8 +79,35 @@ public class GamePanel extends JPanel implements KeyListener, MouseListener, Mou
         addKeyListener(this);
         addMouseListener(this);
         addMouseMotionListener(this);
+        setLayout(new GridBagLayout());
+        menuPanel.setPreferredSize(new Dimension(560, 590));
+        menuPanel.setBackground(new Color(25, 30, 48));
+        menuPanel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(70, 180, 255)),
+            BorderFactory.createEmptyBorder(25, 35, 25, 35)));
+        menuPanel.setLayout(new BoxLayout(menuPanel, BoxLayout.Y_AXIS));
+        add(menuPanel);
+
+        // Esc hoạt động cả khi một nút hoặc thanh âm lượng đang giữ focus.
+        getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("pressed ESCAPE"), "escape");
+        getActionMap().put("escape", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) {
+                if (!escapeHeld) { escapeHeld = true; handleEscape(); }
+            }
+        });
+        getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("released ESCAPE"), "escapeRelease");
+        getActionMap().put("escapeRelease", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) { escapeHeld = false; }
+        });
+        addFocusListener(new FocusAdapter() {
+            @Override public void focusLost(FocusEvent e) {
+                clearMovement();
+                if (state == GameState.PLAYING || state == GameState.LEVEL_UP) pauseGame();
+            }
+        });
 
         initGame();
+        showMenu(GameState.START);
 
         // Vòng lặp game 60 FPS (~16ms mỗi frame)
         gameTimer = new Timer(16, e -> gameLoop());
@@ -91,7 +129,11 @@ public class GamePanel extends JPanel implements KeyListener, MouseListener, Mou
 
         frameCount = 0;
         elapsedSeconds = 0;
-        spawnInterval = 65;
+        runDifficulty = difficulty;
+        spawnInterval = runDifficulty.spawnInterval;
+        cameraX = 0;
+        cameraY = 0;
+        hoveredCardIndex = -1;
         bossSpawned1Min = false;
         bossSpawned2Min = false;
         state = GameState.PLAYING;
@@ -102,6 +144,114 @@ public class GamePanel extends JPanel implements KeyListener, MouseListener, Mou
         savedEnemies.clear();
         savedDropItems.clear();
         savedProjectiles.clear();
+        menuPanel.setVisible(false);
+        requestFocusInWindow();
+    }
+
+    private void clearMovement() {
+        if (player == null) return;
+        player.setUp(false);
+        player.setDown(false);
+        player.setLeft(false);
+        player.setRight(false);
+    }
+
+    private void pauseGame() {
+        pausedState = state;
+        clearMovement();
+        showMenu(GameState.PAUSED);
+    }
+
+    private void resumeGame() {
+        state = pausedState;
+        menuPanel.setVisible(false);
+        requestFocusInWindow();
+    }
+
+    private void handleEscape() {
+        if (state == GameState.PLAYING || state == GameState.LEVEL_UP) pauseGame();
+        else if (state == GameState.PAUSED) resumeGame();
+        else if (state == GameState.SETTINGS) showMenu(settingsReturnState);
+        else if (state == GameState.GAME_OVER) showMenu(GameState.START);
+    }
+
+    private void menuText(String text, int size, Color color) {
+        JLabel label = new JLabel(text);
+        label.setFont(new Font("Arial", Font.PLAIN, size));
+        label.setForeground(color);
+        label.setAlignmentX(Component.CENTER_ALIGNMENT);
+        menuPanel.add(label);
+        menuPanel.add(Box.createVerticalStrut(14));
+    }
+
+    private void menuButton(String text, Runnable action) {
+        JButton button = new JButton(text);
+        button.setFont(new Font("Arial", Font.BOLD, 18));
+        button.setAlignmentX(Component.CENTER_ALIGNMENT);
+        button.setMaximumSize(new Dimension(420, 46));
+        button.addActionListener(e -> action.run());
+        menuPanel.add(button);
+        menuPanel.add(Box.createVerticalStrut(12));
+    }
+
+    private void openSettings() {
+        settingsReturnState = state;
+        showMenu(GameState.SETTINGS);
+    }
+
+    private void showMenu(GameState next) {
+        clearMovement();
+        state = next;
+        menuPanel.removeAll();
+        menuText(next == GameState.START ? "CUỘC PHIÊU LƯU KÌ LẠ" :
+            next == GameState.PAUSED ? "TẠM DỪNG" : "CÀI ĐẶT", 29, new Color(255, 215, 80));
+        if (next == GameState.SETTINGS) {
+            JCheckBox audio = new JCheckBox("Bật âm thanh", sound.isSoundEnabled());
+            audio.setOpaque(false);
+            audio.setForeground(Color.WHITE);
+            audio.setFont(new Font("Arial", Font.PLAIN, 18));
+            audio.setAlignmentX(Component.CENTER_ALIGNMENT);
+            audio.addActionListener(e -> sound.setSoundEnabled(audio.isSelected()));
+            menuPanel.add(audio);
+            menuText("Âm lượng", 16, Color.WHITE);
+            JSlider volume = new JSlider(0, 100, sound.getVolume());
+            volume.setOpaque(false);
+            volume.setMaximumSize(new Dimension(420, 45));
+            volume.addChangeListener(e -> sound.setVolume(volume.getValue()));
+            menuPanel.add(volume);
+            menuText("Chưa có file âm thanh trong bản thử nghiệm.", 14, Color.LIGHT_GRAY);
+            menuText("Độ khó", 18, Color.WHITE);
+            JComboBox<Difficulty> difficulties = new JComboBox<>(Difficulty.values());
+            difficulties.setSelectedItem(difficulty);
+            difficulties.setMaximumSize(new Dimension(420, 36));
+            difficulties.setEnabled(settingsReturnState == GameState.START);
+            difficulties.addActionListener(e -> difficulty = (Difficulty) difficulties.getSelectedItem());
+            menuPanel.add(difficulties);
+            menuText("Độ khó đổi máu, sát thương, tốc độ, mật độ quái.", 14, Color.LIGHT_GRAY);
+            menuText("Ninja: né 1 / 2 / 3 lần theo độ khó.", 14, Color.LIGHT_GRAY);
+            menuText("Boss Khó: lướt 2 nhịp, báo trước ngắn hơn.", 14, Color.LIGHT_GRAY);
+            menuText("Độ khó được chọn trước khi bắt đầu ván.", 14, Color.LIGHT_GRAY);
+            menuButton("Quay lại [Esc]", () -> showMenu(settingsReturnState));
+        } else {
+            menuText(next == GameState.START ? "CỦA SVBK" : "Ván chơi đã dừng hoàn toàn", 22, Color.WHITE);
+            menuText("Độ khó: " + (next == GameState.START ? difficulty : runDifficulty), 16, Color.LIGHT_GRAY);
+            menuPanel.add(Box.createVerticalStrut(12));
+            if (next == GameState.START) menuButton("Bắt đầu", this::initGame);
+            else menuButton("Tiếp tục [Esc]", this::resumeGame);
+            menuButton("Cài đặt", this::openSettings);
+            if (next == GameState.PAUSED) menuButton("Về màn hình Start (kết thúc ván)", () -> showMenu(GameState.START));
+            menuPanel.add(Box.createVerticalGlue());
+            menuText("WASD / Mũi tên: di chuyển", 16, Color.LIGHT_GRAY);
+            menuText("1 / 2 / 3: nâng cấp • Esc: tạm dừng / tiếp tục", 16, Color.LIGHT_GRAY);
+        }
+        menuPanel.setVisible(true);
+        menuPanel.revalidate();
+        repaint();
+    }
+
+    private void addEnemy(Enemy enemy) {
+        enemy.applyDifficulty(runDifficulty);
+        enemies.add(enemy);
     }
 
     /**
@@ -122,8 +272,8 @@ public class GamePanel extends JPanel implements KeyListener, MouseListener, Mou
         if (frameCount % 60 == 0) {
             elapsedSeconds++;
             // Tăng độ khó: giảm thời gian chờ giữa các lần sinh quái
-            if (spawnInterval > 15 && elapsedSeconds % 10 == 0) {
-                spawnInterval -= 3;
+            if (elapsedSeconds % 10 == 0) {
+                spawnInterval = Math.max(runDifficulty.minimumInterval, spawnInterval - 3);
             }
         }
 
@@ -319,11 +469,11 @@ public class GamePanel extends JPanel implements KeyListener, MouseListener, Mou
         // Sinh Boss phút thứ 1 và 2 tại vị trí phía trên/dưới màn hình hiện tại
         if (elapsedSeconds >= 60 && !bossSpawned1Min) {
             bossSpawned1Min = true;
-            enemies.add(new Boss(cameraX + SCREEN_WIDTH / 2.0, cameraY - margin));
+            addEnemy(new Boss(cameraX + SCREEN_WIDTH / 2.0, cameraY - margin));
         }
         if (elapsedSeconds >= 120 && !bossSpawned2Min) {
             bossSpawned2Min = true;
-            enemies.add(new Boss(cameraX + SCREEN_WIDTH / 2.0, cameraY + SCREEN_HEIGHT + margin));
+            addEnemy(new Boss(cameraX + SCREEN_WIDTH / 2.0, cameraY + SCREEN_HEIGHT + margin));
         }
 
 
@@ -352,16 +502,16 @@ public class GamePanel extends JPanel implements KeyListener, MouseListener, Mou
 
             int roll = random.nextInt(100);
             if (elapsedSeconds < 20) {
-                enemies.add(new Bat(spawnX, spawnY));
+                addEnemy(new Bat(spawnX, spawnY));
             } else if (elapsedSeconds < 50) {
-                if (roll < 50) enemies.add(new Bat(spawnX, spawnY));
-                else if (roll < 80) enemies.add(new Zombie(spawnX, spawnY));
-                else enemies.add(new NinjaZombie(spawnX, spawnY)); // 20% sinh NinjaZombie
+                if (roll < 50) addEnemy(new Bat(spawnX, spawnY));
+                else if (roll < 80) addEnemy(new Zombie(spawnX, spawnY));
+                else addEnemy(new NinjaZombie(spawnX, spawnY)); // 20% sinh NinjaZombie
             } else {
-                if (roll < 30) enemies.add(new Bat(spawnX, spawnY));
-                else if (roll < 55) enemies.add(new Zombie(spawnX, spawnY));
-                else if (roll < 80) enemies.add(new NinjaZombie(spawnX, spawnY)); // 25% sinh NinjaZombie
-                else enemies.add(new Skeleton(spawnX, spawnY));
+                if (roll < 30) addEnemy(new Bat(spawnX, spawnY));
+                else if (roll < 55) addEnemy(new Zombie(spawnX, spawnY));
+                else if (roll < 80) addEnemy(new NinjaZombie(spawnX, spawnY)); // 25% sinh NinjaZombie
+                else addEnemy(new Skeleton(spawnX, spawnY));
             }
         }
     }
@@ -519,6 +669,10 @@ public class GamePanel extends JPanel implements KeyListener, MouseListener, Mou
         if (state == GameState.GAME_OVER) {
             drawGameOverScreen(g2);
         }
+        if (state == GameState.START || state == GameState.PAUSED || state == GameState.SETTINGS) {
+            g2.setColor(new Color(0, 0, 0, 190));
+            g2.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+        }
     }
 
     /**
@@ -549,7 +703,7 @@ public class GamePanel extends JPanel implements KeyListener, MouseListener, Mou
         // Sinh Boss hoành tráng ở phía trên phòng và sao chép toàn bộ chỉ số & vũ khí từ người chơi
         Boss boss = new Boss(SCREEN_WIDTH / 2.0 - 27, 100);
         boss.copyFromPlayer(player);
-        enemies.add(boss);
+        addEnemy(boss);
 
         // Thông báo sát thương nổi thông báo vào trận Boss
         damageTexts.add(new DamageText(player.getX(), player.getY() - 30, "BOSS BATTLE! MIRROR BOSS", Color.MAGENTA, true));
@@ -655,6 +809,7 @@ public class GamePanel extends JPanel implements KeyListener, MouseListener, Mou
         // Số quái đã diệt
         g2.setFont(new Font("Arial", Font.BOLD, 14));
         g2.drawString("KILLS: " + player.getKillCount(), SCREEN_WIDTH - 120, barH + 22);
+        g2.drawString(runDifficulty + " | Esc: tạm dừng", SCREEN_WIDTH - 210, barH + 45);
 
         // Máu người chơi
         g2.drawString(String.format("HP: %d / %d", (int) player.getHp(), (int) player.getMaxHp()), 15, barH + 45);

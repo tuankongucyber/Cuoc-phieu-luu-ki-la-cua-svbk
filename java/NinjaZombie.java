@@ -10,6 +10,14 @@ import java.util.List;
 public class NinjaZombie extends Zombie {
     private int dodgeCount = 2; // Tối đa 2 lần né đạn
     private int dodgeCooldown = 0; // Thời gian chờ giữa 2 lần né để không bị giật liên tục
+    private int dodgeCooldownFrames = 25;
+
+    @Override
+    public void applyDifficulty(Difficulty difficulty) {
+        super.applyDifficulty(difficulty);
+        dodgeCount = difficulty.ninjaDodges;
+        dodgeCooldownFrames = difficulty.ninjaCooldown;
+    }
     private int smokeEffectTimer = 0; // Hiệu ứng tàn ảnh / khói ninja khi vừa né xong
     private double lastDodgeX, lastDodgeY;
 
@@ -44,7 +52,7 @@ public class NinjaZombie extends Zombie {
         double dangerDistance = 55.0; // Bán kính nhận diện nguy hiểm sắp trúng đòn
 
         for (Projectile p : projectiles) {
-            if (p.isDead()) continue;
+            if (p.isDead() || p.isHostile()) continue;
 
             double dx = p.getX() - getCenterX();
             double dy = p.getY() - getCenterY();
@@ -100,7 +108,7 @@ public class NinjaZombie extends Zombie {
         }
 
         dodgeCount--;
-        dodgeCooldown = 25; // 25 frame (~0.4s) hồi chiêu giữa 2 lần né
+        dodgeCooldown = dodgeCooldownFrames;
     }
 
     @Override

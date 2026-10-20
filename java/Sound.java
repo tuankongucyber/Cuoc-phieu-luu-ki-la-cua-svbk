@@ -1,6 +1,7 @@
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.Clip;
+import javax.sound.sampled.FloatControl;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
@@ -13,6 +14,7 @@ import java.util.Map;
 public class Sound {
     private Map<String, Clip> soundClips = new HashMap<>();
     private boolean soundEnabled = true;
+    private int volume = 80;
 
     public Sound() {
         // Tải các hiệu ứng âm thanh nếu tồn tại file
@@ -50,7 +52,7 @@ public class Sound {
      * Phát âm thanh theo tên
      */
     public void play(String key) {
-        if (!soundEnabled) return;
+        if (!soundEnabled || volume == 0) return;
 
         Clip clip = soundClips.get(key);
         if (clip != null) {
@@ -59,6 +61,7 @@ public class Sound {
                     clip.stop();
                 }
                 clip.setFramePosition(0);
+                applyVolume(clip);
                 clip.start();
             } catch (Exception ignored) {
             }
@@ -91,5 +94,24 @@ public class Sound {
 
     public void setSoundEnabled(boolean soundEnabled) {
         this.soundEnabled = soundEnabled;
+        if (!soundEnabled) soundClips.values().forEach(Clip::stop);
+    }
+
+    public int getVolume() { return volume; }
+
+    public void setVolume(int volume) {
+        this.volume = Math.max(0, Math.min(100, volume));
+        for (Clip clip : soundClips.values()) {
+            if (this.volume == 0) clip.stop();
+            applyVolume(clip);
+        }
+    }
+
+    private void applyVolume(Clip clip) {
+        if (clip.isControlSupported(FloatControl.Type.MASTER_GAIN)) {
+            FloatControl gain = (FloatControl) clip.getControl(FloatControl.Type.MASTER_GAIN);
+            float db = volume == 0 ? gain.getMinimum() : (float) (20 * Math.log10(volume / 100.0));
+            gain.setValue(Math.max(gain.getMinimum(), Math.min(gain.getMaximum(), db)));
+        }
     }
 }

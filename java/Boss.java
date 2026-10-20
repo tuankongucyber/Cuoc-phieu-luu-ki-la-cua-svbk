@@ -45,6 +45,16 @@ public class Boss extends Enemy {
     private double dashSpeed = 0;     // Tốc độ lướt
     private double dashDistance = 0;  // Độ dài cú lướt
     private double playerSpeedRef = 3.5; // Lưu tốc độ người chơi để tính độ dài
+    private Difficulty difficulty = Difficulty.NORMAL;
+    private int remainingDashes;
+
+    @Override
+    public void applyDifficulty(Difficulty difficulty) {
+        super.applyDifficulty(difficulty);
+        this.difficulty = difficulty;
+        damageMultiplier *= difficulty.enemyDamage;
+        dashTimer = difficulty.bossDashCooldown;
+    }
 
     public Boss(double x, double y) {
         super(x, y, 54, 54, 5000, 1.25, 20, 35, new Color(160, 20, 30));
@@ -88,7 +98,8 @@ public class Boss extends Enemy {
                 if (dashTimer <= 0) {
                     // Bắt đầu chuẩn bị lướt (báo trước 0.5s = 30 frame)
                     dashState = DashState.WARNING;
-                    warningTimer = 30; // 0.5s ở 60 FPS
+                    warningTimer = difficulty.bossWarning;
+                    if (remainingDashes == 0) remainingDashes = difficulty.bossDashCount;
 
                     // Khóa hướng ngắm vào vị trí người chơi lúc bắt đầu báo trước
                     double dx = player.getCenterX() - getCenterX();
@@ -142,7 +153,8 @@ public class Boss extends Enemy {
                 dashTimer--;
                 if (dashTimer <= 0) {
                     dashState = DashState.IDLE;
-                    dashTimer = 220; // 3.6 giây sau tung cú lướt tiếp theo
+                    remainingDashes--;
+                    dashTimer = remainingDashes > 0 ? 12 : difficulty.bossDashCooldown;
                 }
                 break;
         }

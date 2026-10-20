@@ -9,7 +9,7 @@ public class Main {
     public static void main(String[] args) {
         // Đảm bảo khởi tạo giao diện Swing trên Event Dispatch Thread (EDT)
         SwingUtilities.invokeLater(() -> {
-            JFrame window = new JFrame("Vampire Survivors - Đồ Án Game OOP Java");
+            JFrame window = new JFrame("Cuộc phiêu lưu kì lạ của SVBK");
             window.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
             window.setResizable(false);
 
