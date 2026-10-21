@@ -10,7 +10,7 @@ if errorlevel 1 (
 )
 set "BUILD_DIR=%TEMP%\svbk-game-%RANDOM%-%RANDOM%"
 mkdir "%BUILD_DIR%"
-javac -encoding UTF-8 -d "%BUILD_DIR%" *.java
+javac --release 17 -encoding UTF-8 -d "%BUILD_DIR%" *.java
 if errorlevel 1 (
     echo Bien dich that bai.
     pause

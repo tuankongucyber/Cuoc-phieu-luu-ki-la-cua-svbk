@@ -1,6 +1,6 @@
 import java.util.*;
 
-/** Tests real scripts and real companion processes, without replacing their patterns with fixtures. */
+/** Tests real scripts in the in-process Java VM, without replacing their patterns with fixtures. */
 public final class Th06IntegrationTest {
     static void check(boolean value, String message) { if (!value) throw new AssertionError(message); }
     public static void main(String[] args) throws Exception {
@@ -20,7 +20,7 @@ public final class Th06IntegrationTest {
                 long frame = world.th06.frameCount;
                 world.setPaused(true); for (int i = 0; i < 20; i++) world.tick();
                 check(world.th06.frameCount == frame, "Pause freezes the interpreter"); world.setPaused(false);
-                System.out.println("PASS " + id.name() + " peak=" + peak + " serial=" + world.boss.phase + " worstIO=" + String.format(Locale.ROOT,"%.2f",worst));
+                System.out.println("PASS " + id.name() + " peak=" + peak + " serial=" + world.boss.phase + " worstVmStepMs=" + String.format(Locale.ROOT,"%.2f",worst));
                 if (args.length > 0) { world.player.invulnerability = 0; BossPreviewTest.render(world, args[0], "th06-" + id.name()); }
                 observed++;
             } finally { world.dispose(); }

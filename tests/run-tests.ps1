@@ -5,7 +5,7 @@ $buildDir = Join-Path $env:TEMP 'svbk-danmaku-tests'
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 $sources = @((Get-ChildItem -LiteralPath (Join-Path $projectDir 'java') -Filter '*.java').FullName) +
     @((Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.java').FullName)
-& javac -encoding UTF-8 -Xlint:all -d $buildDir @sources
+& javac --release 17 -encoding UTF-8 -Xlint:all -d $buildDir @sources
 if ($LASTEXITCODE -ne 0) { throw 'Compilation failed' }
 foreach ($test in @('GameplayTest', 'BossReworkTest', 'GameMenuTest', 'BossPracticeTest', 'EosdPatternTest', 'Th06DataTest', 'PatternSurvivalTest', 'BossPreviewTest')) {
     & java '-Djava.awt.headless=true' '-Dsvbk.legacyBosses=true' -cp $buildDir $test $buildDir
@@ -20,14 +20,13 @@ if ($Playtest) {
     if ($LASTEXITCODE -ne 0) { throw 'Playthrough test failed' }
 }
 if ($Original) {
-    & (Join-Path $projectDir 'native\th06-host\build.ps1')
-    foreach ($test in @('Th06HealthTest', 'Th06IntegrationTest', 'Th06FullMovesetTest', 'Th06BehaviorTest')) {
-        & java '-Djava.awt.headless=true' -cp $buildDir $test $buildDir
+    foreach ($test in @('Th06JavaReplayTest', 'Th06HealthTest', 'Th06IntegrationTest', 'Th06FullMovesetTest', 'Th06BehaviorTest')) {
+        & java '-Djava.awt.headless=true' "-Dsvbk.test.root=$projectDir" -cp $buildDir $test $buildDir
         if ($LASTEXITCODE -ne 0) { throw "$test failed" }
     }
     if ($Benchmark) {
         & java '-Djava.awt.headless=true' -cp $buildDir Th06PerformanceTest $buildDir
-        if ($LASTEXITCODE -ne 0) { throw 'Native encounter frame budget failed' }
+        if ($LASTEXITCODE -ne 0) { throw 'Java ECL encounter frame budget failed' }
     }
 }
 Write-Output "Reports and renders: $buildDir"

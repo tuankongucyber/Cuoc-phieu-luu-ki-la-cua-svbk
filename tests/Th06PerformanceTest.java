@@ -3,7 +3,7 @@ import java.awt.image.BufferedImage;
 import java.util.*;
 import java.nio.file.*;
 
-/** Includes actual companion I/O, Java collision and clipped Swing-world drawing. */
+/** Includes the Java ECL VM, collision and clipped Swing-world drawing. */
 public final class Th06PerformanceTest {
     static double p95(double[] values) { Arrays.sort(values); return values[(int) Math.ceil(values.length * .95) - 1]; }
     public static void main(String[] args) throws Exception {
@@ -24,10 +24,10 @@ public final class Th06PerformanceTest {
                 peak = Math.max(peak, world.projectiles.size());
                 if (frame >= 0) { update[frame] = (afterUpdate-start)/1e6; render[frame] = (end-afterUpdate)/1e6; combined[frame] = (end-start)/1e6; }
             }
-            String report = String.format(Locale.ROOT, "TH06 native bridge + Java update/render: peak=%d updateP95=%.3f renderP95=%.3f combinedP95=%.3f ms", peak,p95(update),p95(render),p95(combined));
+            String report = String.format(Locale.ROOT, "TH06 Java VM + update/render: peak=%d updateP95=%.3f renderP95=%.3f combinedP95=%.3f ms", peak,p95(update),p95(render),p95(combined));
             System.out.println(report);
             if (args.length > 0) Files.writeString(Path.of(args[0], "th06-performance.txt"), report);
-            if (!world.th06.failure.isEmpty() || combined[(int) Math.ceil(combined.length*.95)-1] >= 16.7) throw new AssertionError("Native encounter frame budget failed");
+            if (!world.th06.failure.isEmpty() || combined[(int) Math.ceil(combined.length*.95)-1] >= 16.7) throw new AssertionError("Java ECL encounter frame budget failed");
         } finally { world.dispose(); }
     }
 }

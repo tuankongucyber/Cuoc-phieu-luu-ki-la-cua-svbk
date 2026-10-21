@@ -1,6 +1,14 @@
-# Current validation — 2026-10-21 (original TH06 integration)
+# Current validation — 2026-10-21 (100% Java runtime)
 
-Run `./tests/run-tests.ps1 -Original -Benchmark -Playtest` with JDK 17+, the local reference data cache and Rust stable/GNU for the companion build. All checks pass. Original data and companion binaries are not committed. See [TH06_PORT.md](TH06_PORT.md) for the exact source revision and adaptations.
+Run `./tests/run-tests.ps1 -Original -Benchmark` with JDK 17+ and the local reference data cache. All game code, including the ECL interpreter, compiles with `javac --release 17` and uses only the standard JDK. The Rust sources/build script are removed; no native executable, JNI, library or child process is needed. See [TH06_PORT.md](TH06_PORT.md) for provenance and architecture.
+
+The Java migration passes the core/menu/pattern suite, GameplayTest (325 assertions), Th06HealthTest, all 14 real-script integrations, all 45 full-moveset scenarios, and Th06BehaviorTest including pause/replay, missing-data handling, Bomb and laser collisions. Th06JavaReplayTest passes 514 reference checkpoints from 45 scenarios, including exact RNG states, and asserts no new child process appears. Its fixture is numeric replay output, not original game scripts or assets.
+
+A temporary migration-only harness compared the old interpreter with Java for 123,360 frames, 175,992 actor states and 12,904,251 bullet states. Discrete fields matched; maximum finite numeric difference was 0.00097656 source pixels. Moving input, Bombs and forced-damage transitions were included. This preserves the previous implementation on these traces; it does not establish equivalence to the original Touhou executable. Full-run balance has not been remeasured after the phase-health increase. Original scripts/metadata remain external data.
+
+The final Java build passes both software-rendering performance targets on this machine. At 640 hostile bullets, update P95 is 0.088 ms, render P95 1.583 ms, combined P95 1.668 ms. At 300 enemies and 2,000 projectiles, combined P95 is 15.937 ms (target <16.7 ms). Oriented geometric glyphs are painted with Java2D into a bounded 1,024-entry memory cache; round types use primitive circles. Cached artwork rounds facing to 128 directions and size to half-pixel steps without changing any simulation angles, hitboxes or graze radii. The ten-type contact sheet and a real Sakuya Misdirection frame were visually checked. These measurements are workload checks on this machine, not universal live-window FPS guarantees.
+
+## Historical original integration measurements (before the Java migration and HP increase)
 
 - Th06IntegrationTest: 14 real-script encounter starts, visible original fire, pause-clock checks and renders.
 - Th06FullMovesetTest: all 42 encounter/difficulty combinations finish, plus the other three Normal Patchouli routes. This uses forced damage after observation windows to cover the whole phase graph; it is not an unaided-play claim. Flandre executes all ten cards, Remilia Normal all five and Cirno Normal all three. Clean capture counts match declared completed cards.

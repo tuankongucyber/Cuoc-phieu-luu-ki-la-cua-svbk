@@ -1,4 +1,4 @@
-# Original Touhou 6 movesets — source audit and import preparation
+# Original Touhou 6 movesets — Java interpreter and source audit
 
 The target is one intact moveset per original boss, including nonspells, Spell Cards, phase order and movement. Production now executes each selected encounter's own ECL sequence. The earlier mixed three-phase encounters remain only as explicit legacy fixtures; they were not relabeled as original bosses.
 
@@ -20,7 +20,7 @@ Do not force all encounters into three phases or add another character's attack 
 
 [daikoko/Re_EoSD](https://github.com/daikoko/Re_EoSD/tree/5cb6bc4927296793ed559cf7a2b3b3e10c605692) is a fan remake, not the original script set. Its `Game/Entities/_Text/BossText.json` and per-stage boss resources were inspected: Cirno has Glacial Draw and Nine Armed Snowflake, for example, and the main-boss Normal sequence is NonA1 → SpellA → NonA2 → SpellB → SpellC. This is not the original complete Cirno sequence. Porting it verbatim would still fail the request. None of those scripts were imported into gameplay.
 
-## Implemented foundation (not playable moveset ports)
+## Initial data inspection tools
 
 - `Th06Archive`: reads the original PBG3 archive directory and extracts entries in memory using LZSS; never modifies the source game or writes extracted data.
 - `Th06Ecl`: validates bytecode boundaries and inventories subroutines, raw instruction parameters/difficulty masks and original CP932 Spell Card declarations.
@@ -65,11 +65,13 @@ Stages 4–7 are available and inventoried; there is no independent official ful
 
 ## Playable integration
 
-The CPU companion in `native/th06-host` uses [TheScreamer74/Touhou6](https://github.com/TheScreamer74/Touhou6/tree/e9d9316f31127f9105aa41ae7cb5d0d7d9a7aee1), pinned at `e9d9316f31127f9105aa41ae7cb5d0d7d9a7aee1`. Vendored modules include the ECL VM, boss ex-instructions, ANM interpreter, and bullet/laser state machines. The MIT notice is retained in `licenses/Touhou6-engine-MIT.txt`. No downloaded game executable runs.
+The interpreter is now implemented entirely in Java, adapted from [TheScreamer74/Touhou6](https://github.com/TheScreamer74/Touhou6/tree/e9d9316f31127f9105aa41ae7cb5d0d7d9a7aee1), revision `e9d9316f31127f9105aa41ae7cb5d0d7d9a7aee1`. The MIT notice is retained in `licenses/Touhou6-engine-MIT.txt`. The previous Rust companion and its build script have been removed from the repository. No downloaded game executable runs.
 
-Compile with Rust stable/GNU using `native/th06-host/build.ps1`; the companion has no third-party crate dependencies and is written to the local data cache. Java/Swing retains the interface, player, build, damage, graze and fixed-step clock. A versioned binary protocol advances the companion exactly one frame per Java tick; Pause/Settings/Level Up advance neither clock. Pipe I/O has a bounded timeout. Failure ends the encounter with an error, without substituting custom patterns. Restart, Start, victory, defeat and JVM exit clean up companion processes.
+`Th06Vm.java` implements ECL opcodes, contexts/call stacks, per-boss ex-instructions, the original 16-bit RNG, movement/interpolation, life/survival callbacks, enemy/bullet/laser pools, time-stop and projectile physics. `Th06Anm.java` reads ANM v0 metadata and executes control flow, sprite selection, interrupts and deferred random-sprite requests. Pure visual transforms and invisible particle positions have no gameplay consumers and are omitted; effect lifetimes and RNG draws are retained. `Th06Runtime.java` adapts typed Java snapshots to the existing player combat, rendering and statistics.
 
-`Th06BossId` lists 14 entry points: six main stages, Flandre, Daiyousei, Koakuma, Rumia/Meiling/Sakuya midboss variants and Extra Patchouli. The UI selects one of four original shot routes for Patchouli. Initial HP/coordinates come from the original timeline. ECL owns phase transitions; the old three-phase director does not. Survival runs use Cirno and Remilia. Missing data/host is reported before starting.
+Compile all `java/*.java` with `javac --release 17 -encoding UTF-8`; run `Main`, or use `java/run.bat`. Only the standard JDK is required. No Rust compiler, native executable, JNI, pipe protocol, worker process or additional Java library is used. ECL/ANM files remain external input data. One `GameWorld` tick advances the interpreter one frame in the same JVM. Pause/Settings/Level Up stop the simulation; restart and return to Start release its state. ECL instruction loops and spawn recursion have explicit budgets.
+
+`Th06BossId` lists 14 entry points: six main stages, Flandre, Daiyousei, Koakuma, Rumia/Meiling/Sakuya midboss variants and Extra Patchouli. The UI selects one of four original shot routes for Patchouli. Initial HP/coordinates come from the original timeline. ECL owns phase transitions; the old three-phase director does not. Survival runs use Cirno and Remilia. Missing data is reported before starting.
 
 ### Intentional adaptations
 
@@ -77,8 +79,8 @@ Compile with Rust stable/GNU using `native/th06-host/build.ps1`; the companion h
 - Existing 100 HP, focus, dash, auto weapons and shared immunity remain. Boss HP is measured per phase, down to its next ECL life callback, rather than against the preceding phase's total. Each boss phase has at least 6,000 effective HP before the existing difficulty multiplier (4,500 Easy / 6,000 Normal / 8,400 Hard). Larger source pools are retained. Java converts damage back into source HP units, preserving original thresholds, order and attack timing. Auxiliary enemies retain their source HP. Attack scripts use difficulty 0/1/2; Extra uses its original branch 4.
 - HP-based phases cannot automatically time out. Original survival cards retain their scripted endpoint; otherwise Flandre's untargetable survival card would never finish.
 - Dialogue is skipped only within intro-wait subroutines, after entry movement. Invulnerable spell windups are not repeatedly restarted.
-- Native rank is fixed at 16; its RNG uses the seed's low 16 bits. Original dynamic rank and item/progress economies are not imported.
-- Bridge damage applies on the next simulation tick. HP thresholds clamp large damage so a strong build cannot skip an original spell.
+- Rank is fixed at 16; the original RNG uses the seed's low 16 bits. Original dynamic rank and item/progress economies are not imported.
+- Queued damage applies on the next simulation tick. HP thresholds clamp large damage so a strong build cannot skip an original spell.
 - Geometric actor, bullet and knife rendering replaces sprites. ANM files provide timing/size metadata only; no bitmap or audio assets are rendered or committed.
 - Original limits of 640 hostile bullets, 64 lasers and 256 enemy slots are enforced. Java field-combat limits remain separate.
 - HUD shows boss identity and phase-local HP only. Player hits use the health bar and hit flash without a yellow damage notice; the defeat screen retains the final damage source. Clean original Spell Cards grant captures; nonspells do not.
@@ -87,6 +89,8 @@ Compile with Rust stable/GNU using `native/th06-host/build.ps1`; the companion h
 
 All 14 encounters were stepped through all three selected difficulties using real ECL. Forced damage between observation windows exercises transitions: all 42 scenarios finish, Flandre emits all ten cards, Remilia Normal all five, and Cirno Normal all three. Four Normal Patchouli routes finish with their own card sequences. Clean capture counts match completed declarations. This is phase coverage, not evidence that a player has beaten every encounter.
 
-Integration tests cover deterministic native trajectories, Bomb cancellation on both sides, harmless laser telegraphs, swept laser/dash collision, shared immunity, Pause, the 14-choice menu, replay, Enter retry, process cleanup and normal-run Cirno selection. Three actual Normal survival runs with legal bot inputs/build choices finish in 13:00, 13:07 and 14:43. The controller uses continuous micro-dodging for target/area builds and a four-tick held-input policy for the control build; those are three reproducible input traces, not a universal balance guarantee.
+During migration, a temporary comparison harness advanced the previous Rust executable and the Java VM with identical moving-player inputs, Bombs at frames 900/2100, and forced damage every 480 frames. Across 45 scenarios it compared 123,360 frames, 175,992 actor states and 12,904,251 bullet states, including phase/status, spell events, pool counts, identities, flags, HP, coordinates, angles and laser states. All discrete values matched. The largest finite numeric difference was 0.00097656 source pixels; matching nonfinite values inherited from the previous interpreter were treated as equivalent. This establishes migration parity for those traces, not correctness against the original executable.
 
-No frame-for-frame match against the original executable is claimed: the interpreter is independently reconstructed and the adaptations above remain. Original data and compiled companion binaries stay outside Git.
+`tests/th06-replay-reference.tsv` retains 514 certified checkpoints from those traces, including counts, HP, sampled coordinates and exact RNG state. `Th06JavaReplayTest` replays them using only Java and checks that no child process is created. Integration tests cover seeded trajectories, Bomb cancellation, harmless laser telegraphs, swept laser/dash collision, shared immunity, Pause, the 14-choice menu, replay, Enter retry, state disposal and normal-run Cirno selection. The earlier full-run timings predate the increased phase-health budget and are historical, not current balance measurements.
+
+No frame-for-frame match against the original executable is claimed: the interpreter is independently reconstructed and the adaptations above remain. Original data stays outside Git. Old companion executables in an existing developer cache are unused; they are not read, loaded or launched by the Java implementation.

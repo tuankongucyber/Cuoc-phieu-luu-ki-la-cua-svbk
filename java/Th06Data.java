@@ -12,16 +12,7 @@ public final class Th06Data {
         String local = System.getenv("LOCALAPPDATA");
         return Path.of(local == null ? System.getProperty("user.home") : local, "SVBK", "TH06Reference");
     }
-    public static Path host() {
-        String override = System.getProperty("svbk.th06.host");
-        if (override != null) return Path.of(override);
-        try {
-            String name = Files.readString(directory().resolve("host-path.txt")).trim();
-            if (name.matches("th06-host-[a-f0-9]{16}\\.exe")) return directory().resolve(name);
-        } catch (IOException absent) { /* Compatibility with earlier local builds. */ }
-        return directory().resolve("th06-host.exe");
-    }
-    public static boolean available() { return Files.isRegularFile(host()) && (Files.isRegularFile(directory().resolve("reference-data.zip")) || Files.isRegularFile(directory().resolve("ecldata7.ecl"))); }
+    public static boolean available() { return Files.isRegularFile(directory().resolve("reference-data.zip")) || Files.isRegularFile(directory().resolve("ecldata7.ecl")); }
     public static synchronized Path prepare(int stage) throws IOException {
         Path dir = directory(); Files.createDirectories(dir);
         Path script = dir.resolve("ecldata" + stage + ".ecl");

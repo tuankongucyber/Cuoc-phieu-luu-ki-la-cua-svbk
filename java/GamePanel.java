@@ -65,7 +65,7 @@ public final class GamePanel extends JPanel {
     }
     void startRun(long seed) {
         if (!Boolean.getBoolean("svbk.legacyBosses") && !Th06Data.available()) {
-            bossLoadError = "Thiếu dữ liệu hoặc bộ chạy TH06. Xem README."; showMenu(Screen.START); return;
+            bossLoadError = "Thiếu dữ liệu TH06. Xem README."; showMenu(Screen.START); return;
         }
         bossLoadError = "";
         if (world != null) world.dispose();
@@ -193,7 +193,7 @@ public final class GamePanel extends JPanel {
                 text("4 vũ khí cấp 4 • 100 HP • 3 Bomb", 16, Color.LIGHT_GRAY);
                 button("Đánh Boss đã chọn", () -> startOriginalBoss(selectedSeed, selectedOriginalBoss, selectedOriginalRoute));
                 button("Quay lại [Esc]", () -> showMenu(Screen.START));
-                if (!bossLoadError.isEmpty()) text("Không mở được dữ liệu TH06. Xem host-errors.log.", 15, new Color(255, 140, 150));
+                if (!bossLoadError.isEmpty()) text("Không mở được dữ liệu TH06. Kiểm tra thư mục dữ liệu.", 15, new Color(255, 140, 150));
                 menuPanel.add(Box.createVerticalGlue());
                 text("Shift: Focus • X: Dash • Space: Bomb", 16, Color.LIGHT_GRAY);
                 text("Thắng / thua: Enter để thử lại cùng Boss", 16, Color.LIGHT_GRAY);

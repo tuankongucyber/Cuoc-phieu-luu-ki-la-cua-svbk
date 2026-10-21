@@ -1,22 +1,16 @@
 import java.awt.*;
-import java.io.*;
-import java.nio.file.*;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.List;
-import java.util.concurrent.*;
 
-/** Synchronous, bounded bridge to the vendored ECL interpreter. No wall-clock gameplay advances. */
+/** In-process, frame-stepped Java ECL simulation. No wall-clock gameplay advances. */
 public final class Th06Runtime implements AutoCloseable {
     public static final double SCALE = 1.34, LEFT = 242.72, TOP = 112;
     public static final Rectangle ARENA = new Rectangle((int) LEFT, (int) TOP, (int) (384 * SCALE), (int) (448 * SCALE));
-    private static final Set<Process> LIVE = ConcurrentHashMap.newKeySet();
-    static { Runtime.getRuntime().addShutdownHook(new Thread(() -> LIVE.forEach(Process::destroyForcibly))); }
     public final Th06BossId identity;
     public final int route;
-    private final Process process;
-    private final DataInputStream input;
-    private final DataOutputStream output;
-    private final ExecutorService io;
+    private final Th06Vm simulation;
     private final Map<Integer, Double> damage = new LinkedHashMap<>();
     private final Map<Integer, Actor> actors = new LinkedHashMap<>();
     private final Map<Integer, Bullet> bullets = new HashMap<>();
@@ -31,61 +25,28 @@ public final class Th06Runtime implements AutoCloseable {
         if (route < 0 || route > 3) throw new IllegalArgumentException("Unknown TH06 shot route");
         this.identity = identity; this.route = route;
         Path script = Th06Data.prepare(identity.stage);
-        if (!Files.isRegularFile(Th06Data.host())) throw new IOException("Chưa biên dịch TH06 host: native/th06-host/build.ps1");
-        process = new ProcessBuilder(Th06Data.host().toString(), script.toString(), Integer.toString(identity.entry),
-            Integer.toString(identity.stage == 7 ? 4 : difficulty.ordinal()), Long.toString(seed & 65535), Integer.toString(route / 2), Integer.toString(route % 2), "1")
-            .redirectError(ProcessBuilder.Redirect.appendTo(Th06Data.directory().resolve("host-errors.log").toFile())).start();
-        LIVE.add(process);
-        input = new DataInputStream(new BufferedInputStream(process.getInputStream(), 128 * 1024));
-        output = new DataOutputStream(new BufferedOutputStream(process.getOutputStream(), 32 * 1024));
-        io = Executors.newSingleThreadExecutor(task -> { Thread thread = new Thread(task, "TH06 frame IO"); thread.setDaemon(true); return thread; });
-        try {
-            Future<Boolean> hello = io.submit(() -> input.readInt() == 0x54483036 && input.readInt() == 3);
-            if (!hello.get(5, TimeUnit.SECONDS)) throw new IOException("Invalid TH06 host protocol");
-        } catch (Exception error) { close(); throw new IOException("Không khởi động được bộ chạy ECL", error); }
+        simulation = new Th06Vm(script, identity.entry, identity.stage == 7 ? 4 : difficulty.ordinal(), (int) (seed & 65535), route);
     }
     public void damage(int actor, double amount) { if (!closed) damage.merge(actor, amount, Double::sum); }
-    boolean isRunning() { return process.isAlive(); }
+    boolean isRunning() { return !closed; }
     public void bomb() { bomb = true; beams.clear(); }
     public void tick(GameWorld world) {
         if (closed) return;
         try {
-            List<Integer> consumed = new ArrayList<>();
+            Set<Integer> consumed = new HashSet<>();
             for (var item : bullets.entrySet()) if (item.getValue().dead) consumed.add(item.getKey());
             Map<Integer, Double> hits = new LinkedHashMap<>(damage); damage.clear();
             boolean usedBomb = bomb; bomb = false;
             float px = (float) ((world.player.getCenterX() - LEFT) / SCALE), py = (float) ((world.player.getCenterY() - TOP) / SCALE);
             long start = System.nanoTime();
-            Future<Snapshot> future = io.submit(() -> {
-                output.writeInt(1); output.writeFloat(px); output.writeFloat(py); output.writeInt(usedBomb ? 1 : 0);
-                output.writeInt(hits.size()); for (var hit : hits.entrySet()) { output.writeInt(hit.getKey()); output.writeFloat(hit.getValue().floatValue()); }
-                output.writeInt(consumed.size()); for (int id : consumed) output.writeInt(id);
-                output.flush(); return readSnapshot();
-            });
-            Snapshot snapshot = future.get(1, TimeUnit.SECONDS);
+            simulation.step(px, py, usedBomb, hits, consumed);
+            Snapshot snapshot = simulation.snapshot();
             lastStepMillis = (System.nanoTime() - start) / 1_000_000.0; frameCount++;
             apply(world, snapshot);
         } catch (Exception error) {
             failure = "Bộ chạy TH06 đã dừng: " + error.getClass().getSimpleName();
             close(); world.notice(failure, 600); world.lastDamageSource = failure; world.state = GameWorld.State.DEFEAT; world.input.clear();
         }
-    }
-    private static int count(DataInputStream stream, int max) throws IOException {
-        int n = stream.readInt(); if (n < 0 || n > max) throw new IOException("Invalid TH06 frame count: " + n); return n;
-    }
-    private Snapshot readSnapshot() throws IOException {
-        if (input.readInt() != 0x5342564b) throw new IOException("TH06 frame marker");
-        int status = input.readInt(), phase = input.readInt();
-        List<Integer> spells = new ArrayList<>(); for (int n = count(input, 256); n > 0; n--) spells.add(input.readInt());
-        int endedCards = count(input, 256);
-        List<ActorState> enemies = new ArrayList<>();
-        for (int n = count(input, 256); n > 0; n--) enemies.add(new ActorState(input.readInt(), input.readFloat(), input.readFloat(), input.readFloat(), input.readFloat(), input.readFloat(), input.readFloat(), input.readInt()));
-        List<BulletState> shots = new ArrayList<>();
-        for (int n = count(input, 10000); n > 0; n--) shots.add(new BulletState(input.readInt(), input.readFloat(), input.readFloat(), input.readFloat(), input.readInt(), input.readFloat(), input.readFloat(), input.readInt() != 0));
-        List<Beam> lasers = new ArrayList<>();
-        for (int n = count(input, 256); n > 0; n--) lasers.add(new Beam(LEFT + input.readFloat() * SCALE, TOP + input.readFloat() * SCALE,
-            LEFT + input.readFloat() * SCALE, TOP + input.readFloat() * SCALE, input.readFloat() * SCALE, input.readInt() != 0, input.readInt()));
-        return new Snapshot(status, phase, enemies, shots, lasers, spells, endedCards);
     }
     private void apply(GameWorld world, Snapshot snapshot) {
         phaseSerial = snapshot.phase;
@@ -139,15 +100,12 @@ public final class Th06Runtime implements AutoCloseable {
     }
     @Override public void close() {
         if (closed) return; closed = true;
-        process.destroy();
-        try { if (!process.waitFor(250, TimeUnit.MILLISECONDS)) { process.destroyForcibly(); process.waitFor(250, TimeUnit.MILLISECONDS); } }
-        catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); process.destroyForcibly(); }
-        LIVE.remove(process); io.shutdownNow();
-        try { input.close(); output.close(); } catch (IOException ignored) { /* Process may already have closed its pipes. */ }
+        simulation.close(); damage.clear(); actors.clear(); bullets.clear(); beams.clear();
     }
-    private record Snapshot(int status, int phase, List<ActorState> actors, List<BulletState> bullets, List<Beam> beams, List<Integer> spells, int endedCards) {}
-    private record ActorState(int id, float x, float y, float hp, float maxHp, float width, float height, int flags) {}
-    private record BulletState(int id, float x, float y, float angle, int sprite, float width, float height, boolean active) {}
+
+    record Snapshot(int status, int phase, List<ActorState> actors, List<BulletState> bullets, List<Beam> beams, List<Integer> spells, int endedCards) {}
+    record ActorState(int id, float x, float y, float hp, float maxHp, float width, float height, int flags) {}
+    record BulletState(int id, float x, float y, float angle, int sprite, float width, float height, boolean active) {}
     public record Beam(double x1, double y1, double x2, double y2, double width, boolean active, int color) {}
     public static final class Actor extends Boss {
         // A source Spell Card may contain only a few hundred HP. Give every boss

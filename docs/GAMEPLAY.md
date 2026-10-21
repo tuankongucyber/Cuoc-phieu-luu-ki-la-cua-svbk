@@ -1,6 +1,6 @@
 # Gameplay contract: Danmaku Survivors
 
-One character, one world, two bosses per survival run, plus 14 original TH06 practice encounters. Java/Swing, 1000×750, with a synchronous CPU companion for original ECL scripts. Geometric placeholders only; audio and art production remain outside this milestone.
+One character, one world, two bosses per survival run, plus 14 original TH06 practice encounters. All executable game code is Java, using only the JDK standard library. Java/Swing, 1000×750, with an in-process ECL interpreter. Geometric placeholders only; audio and art production remain outside this milestone.
 
 ## Deterministic simulation
 
@@ -50,7 +50,9 @@ The boss health bar resets for each phase and measures HP down to its next scrip
 
 Hostile bullet silhouettes distinguish pellets, hollow rings, rice, orbs, kunai, shards, fireballs and knives. Native bullets select their silhouette from the original etama3 type and keep their scripted angle even while stopped. Outlines follow the silhouette rather than adding a round background. Field aimed volleys use kunai, fans use rice, gap rings use hollow rings and spirals use shards. These geometric visuals do not change collision/graze radii, trajectory or damage.
 
-Source, full roster, protocol/build instructions, adaptations and validation boundaries: [TH06_PORT.md](TH06_PORT.md). Mixed patterns in [BOSS_REFERENCES.md](BOSS_REFERENCES.md) remain explicit legacy test fixtures, not a production fallback.
+Oriented geometry is painted by Java2D into a bounded memory cache (1,024 glyphs, 128 visual facing directions, half-pixel sizes). This cache changes only artwork sampling; simulation angles, trajectories, collision and graze remain exact. No image files or external graphics libraries are required.
+
+Source, full roster, Java interpreter architecture, adaptations and validation boundaries: [TH06_PORT.md](TH06_PORT.md). Mixed patterns in [BOSS_REFERENCES.md](BOSS_REFERENCES.md) remain explicit legacy test fixtures, not a production fallback.
 
 ## Build economy
 

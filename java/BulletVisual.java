@@ -1,5 +1,8 @@
 import java.awt.*;
 import java.awt.geom.*;
+import java.awt.image.BufferedImage;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /** Geometry-only bullet art; silhouettes never determine collision or graze radii. */
 public enum BulletVisual {
@@ -19,6 +22,10 @@ public enum BulletVisual {
     private static final Color OUTLINE = new Color(14, 10, 26);
     private static final int[] TH06_BASES = {14,30,46,62,78,94,110,118,122,146};
     private static final BulletVisual[] TH06_TYPES = values();
+    private record GlyphKey(BulletVisual visual, int color, int halfSize, int facing) {}
+    private static final Map<GlyphKey, BufferedImage> GLYPHS = new LinkedHashMap<>(128, .75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<GlyphKey, BufferedImage> entry) { return size() > 1024; }
+    };
     BulletVisual(Shape silhouette) { this.silhouette = silhouette; }
     private static Shape polygon(double... points) {
         Path2D.Double shape = new Path2D.Double(); shape.moveTo(points[0], points[1]);
@@ -45,8 +52,26 @@ public enum BulletVisual {
             g.setColor(Color.WHITE); g.fillOval(cx-core/2, cy-core/2, core, core);
             return;
         }
-        Graphics2D ink = (Graphics2D) g.create();
-        ink.translate(x, y); ink.rotate(angle); ink.scale(size, size);
+        // Cache geometry painted by Java2D. Quantization affects presentation only;
+        // the VM keeps its exact angle and collision/graze radii throughout.
+        int facing = this == RING || !Double.isFinite(angle) ? 0 : Math.floorMod((int) Math.round(angle * 128 / (Math.PI * 2)), 128);
+        GlyphKey key = new GlyphKey(this, color.getRGB(), (int) Math.round(size * 2), facing);
+        BufferedImage glyph;
+        synchronized (GLYPHS) {
+            glyph = GLYPHS.get(key);
+            if (glyph == null) {
+                double cachedSize = key.halfSize / 2.0;
+                int extent = (int) Math.ceil(cachedSize * 1.5 + 3);
+                glyph = new BufferedImage(extent * 2 + 1, extent * 2 + 1, BufferedImage.TYPE_INT_ARGB_PRE);
+                Graphics2D ink = glyph.createGraphics();
+                ink.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                ink.translate(extent, extent); ink.rotate(facing * Math.PI * 2 / 128); ink.scale(cachedSize, cachedSize);
+                paintShape(ink, cachedSize, color); ink.dispose(); GLYPHS.put(key, glyph);
+            }
+        }
+        g.drawImage(glyph, (int) Math.round(x) - glyph.getWidth()/2, (int) Math.round(y) - glyph.getHeight()/2, null);
+    }
+    private void paintShape(Graphics2D ink, double size, Color color) {
         ink.setStroke(new BasicStroke((float) (2.2 / size), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
         ink.setColor(OUTLINE); ink.draw(silhouette);
         ink.setColor(color); ink.fill(silhouette);
@@ -64,6 +89,5 @@ public enum BulletVisual {
             default:
                 ink.fill(new Ellipse2D.Double(-.35, -.4, .55, .55)); break;
         }
-        ink.dispose();
     }
 }

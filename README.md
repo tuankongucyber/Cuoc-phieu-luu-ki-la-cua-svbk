@@ -10,7 +10,7 @@ Cần **JDK 17 trở lên**, với `java` và `javac` có trong PATH. Trên Wind
 .\java\run.bat
 ~~~
 
-Script tự chuyển đến đúng thư mục và biên dịch UTF-8 vào thư mục tạm. Không cần Maven/Gradle. Các trận TH06 cần thêm bộ chạy ECL đã biên dịch và dữ liệu game trong cache cục bộ.
+Script tự chuyển đến đúng thư mục và biên dịch UTF-8 vào thư mục tạm. **Toàn bộ mã chạy game là Java**, chỉ dùng thư viện chuẩn JDK. Không cần Maven/Gradle, Rust, JNI hoặc chương trình native. Các trận TH06 đọc dữ liệu script và metadata trong cache cục bộ.
 
 Màn hình Start có **Bắt đầu**, **Cài đặt**, lựa chọn độ khó và seed để tái hiện run. Cài đặt âm thanh vẫn có bật/tắt và âm lượng; bản này chưa kèm file âm thanh. Độ khó khóa trong ván, còn âm thanh có thể chỉnh từ menu tạm dừng. Cài đặt giữ trong phiên mở ứng dụng.
 
@@ -20,9 +20,9 @@ HUD chỉ hiện tên Boss và HP, không hiện tên moveset/Spell Card. Nhân 
 
 ### Bộ chạy đòn TH06
 
-Giao diện, người chơi, vũ khí, sát thương và mô phỏng 60 Hz vẫn là Java/Swing. Script ECL chạy đồng bộ qua một chương trình CPU nhỏ, biên dịch từ mã nguồn engine MIT ở `native/th06-host/`; không chạy bản game tải về. Mỗi tick Java gửi input/sát thương rồi nhận trạng thái đạn, laser và Boss. Pause dừng cả hai.
+Giao diện, người chơi, vũ khí, sát thương và bộ chạy script đều là Java/Swing. `Th06Vm` đọc và thực thi dữ liệu ECL trực tiếp trong JVM, gồm chuyển pha, RNG, đạn, laser, time-stop và đòn riêng của từng Boss. `Th06Anm` đọc metadata kích thước, lịch animation và các yêu cầu RNG; không tải ảnh. Mỗi tick của `GameWorld` cập nhật bộ mô phỏng đúng một frame; Pause dừng toàn bộ.
 
-Trên máy đang phát triển, bộ chạy và dữ liệu đã có trong `%LOCALAPPDATA%/SVBK/TH06Reference/`. Với máy mới: đặt `reference-data.zip` tương thích vào thư mục đó và chạy `native/th06-host/build.ps1` bằng Rust stable (GNU/MinGW trên Windows). Rust chỉ cần khi biên dịch bộ chạy; chơi game dùng JDK và file host đã biên dịch. Có thể đổi thư mục bằng `-Dsvbk.th06.data=...` và đường dẫn host bằng `-Dsvbk.th06.host=...`. Thiếu dữ liệu hoặc host thì giao diện báo lỗi, không tự thay bằng bộ đòn trộn cũ.
+Trên máy đang phát triển, dữ liệu đã có trong `%LOCALAPPDATA%/SVBK/TH06Reference/`. Với máy mới: đặt `reference-data.zip` tương thích vào thư mục đó rồi chạy bằng JDK 17+. Java tự đọc archive và chuẩn bị các file `.ecl`/`.anm` cần thiết. Có thể đổi thư mục bằng `-Dsvbk.th06.data=...`. Không cần build thêm bộ chạy hoặc cài toolchain khác. Thiếu dữ liệu thì giao diện báo lỗi, không tự thay bằng bộ đòn trộn cũ.
 
 Dữ liệu gốc không nằm trong Git. Nguồn, phiên bản, thay đổi tích hợp và giới hạn kiểm chứng: [docs/TH06_PORT.md](docs/TH06_PORT.md).
 
@@ -65,7 +65,7 @@ Tích hợp moveset hiện tại: [docs/TH06_PORT.md](docs/TH06_PORT.md). Bản 
 .\tests\run-tests.ps1 -Benchmark -Playtest -Original
 ~~~
 
-Lệnh đầu kiểm tra nền chiến đấu và bộ pattern mẫu cũ trong fixture riêng. `-Original` biên dịch host và kiểm tra dữ liệu thật: 14 trận × 3 mức khó, bốn nhánh Patchouli, seed, Bomb, laser, Pause, chơi lại và dọn tiến trình. `-Benchmark` đo tải 300 quái + 2.000 đạn; `-Playtest` chạy ba build trên run hiện tại. Báo cáo và ảnh render nằm trong thư mục tạm được script in ra.
+Lệnh đầu kiểm tra nền chiến đấu và bộ pattern mẫu cũ trong fixture riêng. `-Original` kiểm tra dữ liệu thật hoàn toàn bằng Java: 14 trận × 3 mức khó, bốn nhánh Patchouli, seed, Bomb, laser, Pause, chơi lại và 514 mốc replay đã đối chiếu với bộ chạy trước khi chuyển đổi. Kiểm thử cũng xác nhận bộ mô phỏng không sinh tiến trình con. `-Benchmark` đo tải 300 quái + 2.000 đạn; `-Playtest` chạy ba build trên run hiện tại. Báo cáo và ảnh render nằm trong thư mục tạm được script in ra.
 
 Kết quả, cấu hình đo và giới hạn của kiểm thử tự động: [docs/VALIDATION.md](docs/VALIDATION.md).
 
