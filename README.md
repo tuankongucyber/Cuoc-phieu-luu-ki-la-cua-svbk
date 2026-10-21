@@ -9,6 +9,10 @@ Cần **JDK 17 trở lên**, với `java` và `javac` có trong PATH. Trên Wind
 .\java\run.bat
 ~~~
 
+Lần đầu, bấm **Bắt đầu** hoặc **Đánh Boss đã chọn**: game tự tải khoảng **54 MB dữ liệu Boss**, hiện tiến độ, kiểm tra dữ liệu rồi tự vào game. Các lần sau chơi offline; toàn bộ mã game vẫn chạy bằng Java.
+
+Nếu tải lỗi hoặc mạng chặn GitHub, dùng nút **Chọn gói ZIP dữ liệu…**. Có thể chọn `reference-data.zip` từ cache của máy đã chuẩn bị (`%LOCALAPPDATA%/SVBK/TH06Reference/`). Nguồn và cách chuẩn bị thủ công: [docs/TH06_PORT.md](docs/TH06_PORT.md).
+
 ## Điều khiển
 
 | Phím | Tác dụng |

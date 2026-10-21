@@ -23,6 +23,10 @@ public final class GamePanel extends JPanel {
     Th06BossId selectedOriginalBoss = Th06BossId.RUMIA;
     int selectedOriginalRoute;
     String bossLoadError = "";
+    boolean preparingBossData;
+    String dataStatus = "";
+    JLabel dataStatusLabel;
+    SwingWorker<Void, String> dataTask;
 
     public GamePanel() {
         setPreferredSize(new Dimension(1000, 750)); setFocusable(true);
@@ -64,8 +68,9 @@ public final class GamePanel extends JPanel {
         gameTimer.start();
     }
     void startRun(long seed) {
-        if (!Boolean.getBoolean("svbk.legacyBosses") && !Th06Data.available()) {
-            bossLoadError = "Thiếu dữ liệu TH06. Xem README."; showMenu(Screen.START); return;
+        if (!Boolean.getBoolean("svbk.legacyBosses") && !Th06Data.ready(2, 6)) {
+            selectedSeed = seed;
+            prepareBossData(() -> startRun(seed), Screen.START, 2, 6); return;
         }
         bossLoadError = "";
         if (world != null) world.dispose();
@@ -78,6 +83,10 @@ public final class GamePanel extends JPanel {
         held.clear(); screen = Screen.GAME; menuPanel.setVisible(false); requestFocusInWindow(); repaint();
     }
     void startOriginalBoss(long seed, Th06BossId identity, int route) {
+        if (!Th06Data.ready(identity.stage)) {
+            selectedSeed = seed;
+            prepareBossData(() -> startOriginalBoss(seed, identity, route), Screen.BOSS_TEST, identity.stage); return;
+        }
         try {
             GameWorld next = GameWorld.originalBossTest(seed, difficulty, identity, route);
             if (world != null) world.dispose();
@@ -86,6 +95,62 @@ public final class GamePanel extends JPanel {
             held.clear(); screen = Screen.GAME; menuPanel.setVisible(false); requestFocusInWindow(); repaint();
         } catch (java.io.IOException error) {
             bossLoadError = "Không tải được Boss: " + error.getMessage(); showMenu(Screen.BOSS_TEST);
+        }
+    }
+    private void prepareBossData(Runnable onReady, Screen origin, int... stages) {
+        if (preparingBossData) return;
+        if (Boolean.getBoolean("svbk.th06.offline") && !java.nio.file.Files.isRegularFile(Th06Data.directory().resolve("reference-data.zip"))) {
+            bossLoadError = "Chưa có dữ liệu Boss. Kết nối mạng hoặc chọn gói ZIP."; showMenu(origin); return;
+        }
+        runDataTask(progress -> Th06Setup.ensure(progress, stages), onReady, origin);
+    }
+    @FunctionalInterface private interface DataPreparation {
+        void run(java.util.function.IntConsumer progress) throws java.io.IOException;
+    }
+    private void runDataTask(DataPreparation preparation, Runnable onReady, Screen origin) {
+        preparingBossData = true; bossLoadError = ""; dataStatus = "Đang chuẩn bị dữ liệu Boss…";
+        showMenu(origin);
+        dataTask = new SwingWorker<>() {
+            @Override protected Void doInBackground() throws java.io.IOException {
+                preparation.run(percent -> publish(percent < 0 ? "Đang chuẩn bị script Boss…" : "Đang tải dữ liệu Boss (~54 MB)… " + percent + "%"));
+                return null;
+            }
+            @Override protected void process(java.util.List<String> updates) {
+                dataStatus = updates.get(updates.size() - 1);
+                if (dataStatusLabel != null) dataStatusLabel.setText(dataStatus);
+            }
+            @Override protected void done() {
+                preparingBossData = false; dataStatus = "";
+                try {
+                    get(); bossLoadError = "";
+                    if (screen == origin) onReady.run(); else showMenu(screen);
+                } catch (Exception error) {
+                    Throwable cause = error.getCause() == null ? error : error.getCause();
+                    bossLoadError = cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
+                    showMenu(screen == Screen.BOSS_TEST ? Screen.BOSS_TEST : Screen.START);
+                }
+            }
+        };
+        dataTask.execute();
+    }
+    private void chooseBossPack() {
+        if (preparingBossData) return;
+        JFileChooser chooser = new JFileChooser(); chooser.setDialogTitle("Chọn gói ZIP dữ liệu Boss");
+        chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("TH06 game data (*.zip)", "zip"));
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        java.nio.file.Path source = chooser.getSelectedFile().toPath();
+        Screen origin = screen == Screen.BOSS_TEST ? Screen.BOSS_TEST : Screen.START;
+        runDataTask(progress -> Th06Setup.importPack(source, progress), () -> showMenu(origin), origin);
+    }
+    private void dataMessage() {
+        dataStatusLabel = null;
+        if (preparingBossData) dataStatusLabel = text(dataStatus, 14, new Color(255, 215, 100));
+        else if (!bossLoadError.isEmpty()) {
+            String shortError = bossLoadError.length() > 66 ? bossLoadError.substring(0, 63) + "…" : bossLoadError;
+            text(shortError, 14, new Color(255,140,150)).setToolTipText(bossLoadError);
+            JButton choose = new JButton("Chọn gói ZIP dữ liệu…"); choose.setFont(new Font("Arial", Font.PLAIN, 14));
+            choose.setAlignmentX(Component.CENTER_ALIGNMENT); choose.setMaximumSize(new Dimension(480, 30));
+            choose.addActionListener(e -> chooseBossPack()); menuPanel.add(choose); menuPanel.add(Box.createVerticalStrut(7));
         }
     }
     private void replay() {
@@ -147,14 +212,16 @@ public final class GamePanel extends JPanel {
             world.setPaused(true); showMenu(Screen.PAUSE);
         }
     }
-    private void text(String value, int size, Color color) {
+    private JLabel text(String value, int size, Color color) {
         JLabel label = new JLabel(value); label.setFont(new Font("Arial", Font.PLAIN, size));
         label.setForeground(color); label.setAlignmentX(Component.CENTER_ALIGNMENT);
         menuPanel.add(label); menuPanel.add(Box.createVerticalStrut(13));
+        return label;
     }
     private void button(String value, Runnable action) {
         JButton button = new JButton(value); button.setFont(new Font("Arial", Font.BOLD, 18));
         button.setAlignmentX(Component.CENTER_ALIGNMENT); button.setMaximumSize(new Dimension(480, 44));
+        button.setEnabled(!preparingBossData);
         button.addActionListener(e -> action.run()); menuPanel.add(button); menuPanel.add(Box.createVerticalStrut(13));
     }
     void showMenu(Screen next) {
@@ -183,17 +250,19 @@ public final class GamePanel extends JPanel {
                 text("Chọn Boss • đánh trọn bộ đòn riêng", 17, Color.LIGHT_GRAY);
                 JComboBox<Th06BossId> roster = new JComboBox<>(Th06BossId.values());
                 roster.setSelectedItem(selectedOriginalBoss); roster.setMaximumSize(new Dimension(480, 36));
+                roster.setEnabled(!preparingBossData);
                 roster.addActionListener(e -> selectedOriginalBoss = (Th06BossId) roster.getSelectedItem()); menuPanel.add(roster);
                 menuPanel.add(Box.createVerticalStrut(15));
                 text("Nhánh đòn Boss theo nhân vật TH06", 15, Color.LIGHT_GRAY);
                 JComboBox<String> route = new JComboBox<>(new String[]{"Reimu A", "Reimu B", "Marisa A", "Marisa B"});
                 route.setSelectedIndex(selectedOriginalRoute); route.setMaximumSize(new Dimension(480, 36));
+                route.setEnabled(!preparingBossData);
                 route.addActionListener(e -> selectedOriginalRoute = route.getSelectedIndex()); menuPanel.add(route);
                 menuPanel.add(Box.createVerticalStrut(15));
                 text("4 vũ khí cấp 4 • 100 HP • 3 Bomb", 16, Color.LIGHT_GRAY);
                 button("Đánh Boss đã chọn", () -> startOriginalBoss(selectedSeed, selectedOriginalBoss, selectedOriginalRoute));
                 button("Quay lại [Esc]", () -> showMenu(Screen.START));
-                if (!bossLoadError.isEmpty()) text("Không mở được dữ liệu TH06. Kiểm tra thư mục dữ liệu.", 15, new Color(255, 140, 150));
+                dataMessage();
                 menuPanel.add(Box.createVerticalGlue());
                 text("Shift: Focus • X: Dash • Space: Bomb", 16, Color.LIGHT_GRAY);
                 text("Thắng / thua: Enter để thử lại cùng Boss", 16, Color.LIGHT_GRAY);
@@ -215,10 +284,11 @@ public final class GamePanel extends JPanel {
             if (next == Screen.START) {
                 text("Seed • nhập lại để tái hiện cùng một run", 14, Color.LIGHT_GRAY);
                 seedField = new JTextField(Long.toString(selectedSeed)); seedField.setMaximumSize(new Dimension(480, 32));
+                seedField.setEnabled(!preparingBossData);
                 seedField.setHorizontalAlignment(JTextField.CENTER); menuPanel.add(seedField); menuPanel.add(Box.createVerticalStrut(14));
                 button("Bắt đầu", () -> startFromSeed(false));
                 button("Test Boss", () -> startFromSeed(true));
-                if (!bossLoadError.isEmpty()) text("Thiếu dữ liệu hoặc bộ chạy TH06. Xem README.", 14, new Color(255,140,150));
+                dataMessage();
             } else button("Tiếp tục [Esc]", this::resume);
             button("Cài đặt", () -> { settingsReturn = screen; showMenu(Screen.SETTINGS); });
             if (next == Screen.PAUSE) button("Về Start • kết thúc ván", () -> { selectedSeed++; held.clear(); showMenu(Screen.START); });
