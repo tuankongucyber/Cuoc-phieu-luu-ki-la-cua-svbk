@@ -1,1022 +1,243 @@
-import javax.swing.JPanel;
-import javax.swing.Timer;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Random;
+import java.util.HashSet;
+import java.util.Set;
 
-/**
- * Bảng điều khiển và màn hình chơi game chính (GamePanel).
- * Chạy vòng lặp game 60 FPS mượt mà, quản lý trạng thái,
- * sự kiện bàn phím/chuột, va chạm thực thể, hệ thống quái vật và giao diện HUD.
- */
-public class GamePanel extends JPanel implements KeyListener, MouseListener, MouseMotionListener {
-    public static final int SCREEN_WIDTH = 1000;
-    public static final int SCREEN_HEIGHT = 750;
-
-    public enum GameState {
-        START,
-        PAUSED,
-        SETTINGS,
-        PLAYING,
-        LEVEL_UP,
-        GAME_OVER
-    }
-
-    private GameState state = GameState.PLAYING;
-    private GameState settingsReturnState = GameState.START;
-    private GameState pausedState = GameState.PLAYING;
-    private final JPanel menuPanel = new JPanel();
-    private Difficulty difficulty = Difficulty.NORMAL;
-    private Difficulty runDifficulty = Difficulty.NORMAL;
-    private boolean escapeHeld;
-
-    private Timer gameTimer;
-    private Random random = new Random();
-    // Phòng Boss & Cổng dịch chuyển
-    private Portal portal = null;
-    private boolean portalSpawned = false;
-    private boolean inBossRoom = false;
-    private boolean bossDefeatedInRoom = false;
-    private double returnPlayerX = 0;
-    private double returnPlayerY = 0;
-    private List<Enemy> savedEnemies = new ArrayList<>();
-    private List<DropItem> savedDropItems = new ArrayList<>();
-    private List<Projectile> savedProjectiles = new ArrayList<>();
-
-    // Camera
-    private double cameraX = 0;
-    private double cameraY = 0;
-
-    // Thực thể game
-    private Player player;
-    private List<Enemy> enemies = new ArrayList<>();
-    private List<Projectile> projectiles = new ArrayList<>();
-    private List<DropItem> dropItems = new ArrayList<>();
-    private List<DamageText> damageTexts = new ArrayList<>();
-    private Sound sound = new Sound();
-
-    // Đồng hồ & Tỉ lệ xuất hiện quái
-    private int frameCount = 0;
-    private int elapsedSeconds = 0;
-    private int spawnInterval = 65; // Càng chơi lâu quái ra càng dồn dập
-    private boolean bossSpawned1Min = false;
-    private boolean bossSpawned2Min = false;
-
-    // Nâng cấp (Level Up)
-    private List<UpgradeOption> activeUpgradeChoices = new ArrayList<>();
-    private Rectangle[] upgradeCardBounds = new Rectangle[3];
-    private int hoveredCardIndex = -1;
+/** Swing owns presentation and input routing only. Gameplay lives in GameWorld. */
+@SuppressWarnings("serial")
+public final class GamePanel extends JPanel {
+    public static final int SCREEN_WIDTH = 1000, SCREEN_HEIGHT = 750;
+    enum Screen { START, GAME, PAUSE, SETTINGS, BOSS_TEST }
+    Screen screen = Screen.START, settingsReturn = Screen.START;
+    GameWorld world;
+    Difficulty difficulty = Difficulty.NORMAL;
+    final Sound sound = new Sound();
+    final JPanel menuPanel = new JPanel();
+    final SimulationClock clock = new SimulationClock();
+    final GameRenderer renderer = new GameRenderer();
+    final javax.swing.Timer gameTimer;
+    final Set<Integer> held = new HashSet<>();
+    long selectedSeed = Long.getLong("svbk.seed", System.nanoTime());
+    JTextField seedField;
+    Th06BossId selectedOriginalBoss = Th06BossId.RUMIA;
+    int selectedOriginalRoute;
+    String bossLoadError = "";
 
     public GamePanel() {
-        setPreferredSize(new Dimension(SCREEN_WIDTH, SCREEN_HEIGHT));
-        setBackground(new Color(18, 18, 24));
-        setFocusable(true);
-        addKeyListener(this);
-        addMouseListener(this);
-        addMouseMotionListener(this);
-        setLayout(new GridBagLayout());
-        menuPanel.setPreferredSize(new Dimension(560, 590));
-        menuPanel.setBackground(new Color(25, 30, 48));
-        menuPanel.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(new Color(70, 180, 255)),
-            BorderFactory.createEmptyBorder(25, 35, 25, 35)));
+        setPreferredSize(new Dimension(1000, 750)); setFocusable(true);
+        setLayout(new GridBagLayout()); setBackground(new Color(17, 24, 32));
+        menuPanel.setPreferredSize(new Dimension(620, 620));
         menuPanel.setLayout(new BoxLayout(menuPanel, BoxLayout.Y_AXIS));
+        menuPanel.setBackground(new Color(24, 34, 50));
+        menuPanel.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(new Color(75, 155, 200)),
+            BorderFactory.createEmptyBorder(25, 35, 25, 35)));
         add(menuPanel);
-
-        // Esc hoạt động cả khi một nút hoặc thanh âm lượng đang giữ focus.
-        getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("pressed ESCAPE"), "escape");
-        getActionMap().put("escape", new AbstractAction() {
-            @Override public void actionPerformed(ActionEvent e) {
-                if (!escapeHeld) { escapeHeld = true; handleEscape(); }
+        int[] keys = {KeyEvent.VK_W, KeyEvent.VK_A, KeyEvent.VK_S, KeyEvent.VK_D, KeyEvent.VK_UP, KeyEvent.VK_DOWN,
+            KeyEvent.VK_LEFT, KeyEvent.VK_RIGHT, KeyEvent.VK_SHIFT, KeyEvent.VK_X, KeyEvent.VK_SPACE, KeyEvent.VK_ESCAPE,
+            KeyEvent.VK_1, KeyEvent.VK_2, KeyEvent.VK_3, KeyEvent.VK_R, KeyEvent.VK_ENTER};
+        for (int key : keys) {
+            getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(key, 0, false), "press" + key);
+            getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(key, 0, true), "release" + key);
+            // Shift modifies other key bindings, so register the same actions with SHIFT_DOWN_MASK too.
+            getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(key, InputEvent.SHIFT_DOWN_MASK, false), "press" + key);
+            getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(key, InputEvent.SHIFT_DOWN_MASK, true), "release" + key);
+            getActionMap().put("press" + key, new AbstractAction() { public void actionPerformed(ActionEvent e) { press(key); } });
+            getActionMap().put("release" + key, new AbstractAction() { public void actionPerformed(ActionEvent e) { release(key); } });
+        }
+        addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) {
+                requestFocusInWindow();
+                if (screen == Screen.GAME && world.state == GameWorld.State.LEVEL_UP) {
+                    for (int i = 0; i < 3; i++) if (GameRenderer.CARDS[i].contains(e.getPoint())) { world.chooseUpgrade(i); break; }
+                    if (GameRenderer.REROLL.contains(e.getPoint())) world.reroll();
+                    repaint();
+                }
             }
         });
-        getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("released ESCAPE"), "escapeRelease");
-        getActionMap().put("escapeRelease", new AbstractAction() {
-            @Override public void actionPerformed(ActionEvent e) { escapeHeld = false; }
+        showMenu(Screen.START);
+        gameTimer = new javax.swing.Timer(16, e -> {
+            boolean running = screen == Screen.GAME && world != null && !world.paused && world.state == GameWorld.State.PLAYING;
+            clock.advance(System.nanoTime(), running, () -> world.tick());
+            repaint();
         });
-        addFocusListener(new FocusAdapter() {
-            @Override public void focusLost(FocusEvent e) {
-                clearMovement();
-                if (state == GameState.PLAYING || state == GameState.LEVEL_UP) pauseGame();
-            }
-        });
-
-        initGame();
-        showMenu(GameState.START);
-
-        // Vòng lặp game 60 FPS (~16ms mỗi frame)
-        gameTimer = new Timer(16, e -> gameLoop());
         gameTimer.start();
     }
-
-    /**
-     * Khởi tạo hoặc đặt lại toàn bộ ván game
-     */
-    private void initGame() {
-        player = new Player(SCREEN_WIDTH / 2.0 - 17, SCREEN_HEIGHT / 2.0 - 17);
-        // Tặng vũ khí khởi đầu: Gậy phép Magic Wand
-        player.addWeapon(new MagicWand());
-
-        enemies.clear();
-        projectiles.clear();
-        dropItems.clear();
-        damageTexts.clear();
-
-        frameCount = 0;
-        elapsedSeconds = 0;
-        runDifficulty = difficulty;
-        spawnInterval = runDifficulty.spawnInterval;
-        cameraX = 0;
-        cameraY = 0;
-        hoveredCardIndex = -1;
-        bossSpawned1Min = false;
-        bossSpawned2Min = false;
-        state = GameState.PLAYING;
-        portal = null;
-        portalSpawned = false;
-        inBossRoom = false;
-        bossDefeatedInRoom = false;
-        savedEnemies.clear();
-        savedDropItems.clear();
-        savedProjectiles.clear();
-        menuPanel.setVisible(false);
-        requestFocusInWindow();
+    void startRun(long seed) {
+        if (!Boolean.getBoolean("svbk.legacyBosses") && !Th06Data.available()) {
+            bossLoadError = "Thiếu dữ liệu hoặc bộ chạy TH06. Xem README."; showMenu(Screen.START); return;
+        }
+        bossLoadError = "";
+        if (world != null) world.dispose();
+        selectedSeed = seed; world = new GameWorld(seed, difficulty);
+        held.clear(); screen = Screen.GAME; menuPanel.setVisible(false); requestFocusInWindow(); repaint();
     }
-
-    private void clearMovement() {
-        if (player == null) return;
-        player.setUp(false);
-        player.setDown(false);
-        player.setLeft(false);
-        player.setRight(false);
+    void startBossTest(long seed, int encounter) {
+        if (world != null) world.dispose();
+        selectedSeed = seed; world = GameWorld.bossTest(seed, difficulty, encounter);
+        held.clear(); screen = Screen.GAME; menuPanel.setVisible(false); requestFocusInWindow(); repaint();
     }
-
-    private void pauseGame() {
-        pausedState = state;
-        clearMovement();
-        showMenu(GameState.PAUSED);
+    void startOriginalBoss(long seed, Th06BossId identity, int route) {
+        try {
+            GameWorld next = GameWorld.originalBossTest(seed, difficulty, identity, route);
+            if (world != null) world.dispose();
+            world = next; selectedSeed = seed; selectedOriginalBoss = identity; selectedOriginalRoute = route;
+            bossLoadError = "";
+            held.clear(); screen = Screen.GAME; menuPanel.setVisible(false); requestFocusInWindow(); repaint();
+        } catch (java.io.IOException error) {
+            bossLoadError = "Không tải được Boss: " + error.getMessage(); showMenu(Screen.BOSS_TEST);
+        }
     }
-
-    private void resumeGame() {
-        state = pausedState;
-        menuPanel.setVisible(false);
-        requestFocusInWindow();
+    private void replay() {
+        if (world.originalPractice != null) startOriginalBoss(selectedSeed, world.originalPractice, world.originalRoute);
+        else if (world.isBossTest()) startBossTest(selectedSeed, world.practiceEncounter);
+        else startRun(selectedSeed);
     }
-
-    private void handleEscape() {
-        if (state == GameState.PLAYING || state == GameState.LEVEL_UP) pauseGame();
-        else if (state == GameState.PAUSED) resumeGame();
-        else if (state == GameState.SETTINGS) showMenu(settingsReturnState);
-        else if (state == GameState.GAME_OVER) showMenu(GameState.START);
+    private void startFromSeed(boolean testBoss) {
+        try {
+            selectedSeed = Long.parseLong(seedField.getText().trim());
+            if (testBoss) showMenu(Screen.BOSS_TEST); else startRun(selectedSeed);
+        } catch (NumberFormatException error) {
+            seedField.setText("42"); seedField.setToolTipText("Seed phải là số nguyên 64-bit.");
+        }
     }
-
-    private void menuText(String text, int size, Color color) {
-        JLabel label = new JLabel(text);
-        label.setFont(new Font("Arial", Font.PLAIN, size));
-        label.setForeground(color);
-        label.setAlignmentX(Component.CENTER_ALIGNMENT);
-        menuPanel.add(label);
-        menuPanel.add(Box.createVerticalStrut(14));
+    void press(int key) {
+        if (!held.add(key)) return;
+        if (key == KeyEvent.VK_ESCAPE) { escape(); return; }
+        if (screen != Screen.GAME || world == null) return;
+        if (world.state == GameWorld.State.LEVEL_UP) {
+            if (key >= KeyEvent.VK_1 && key <= KeyEvent.VK_3) world.chooseUpgrade(key - KeyEvent.VK_1);
+            if (key == KeyEvent.VK_R) world.reroll();
+        } else if (world.state == GameWorld.State.PLAYING) {
+            updateMovement();
+            if (key == KeyEvent.VK_X) world.input.dashPressed = true;
+            if (key == KeyEvent.VK_SPACE) world.input.bombPressed = true;
+        } else if (key == KeyEvent.VK_ENTER) {
+            replay();
+        }
+        repaint();
     }
-
-    private void menuButton(String text, Runnable action) {
-        JButton button = new JButton(text);
-        button.setFont(new Font("Arial", Font.BOLD, 18));
-        button.setAlignmentX(Component.CENTER_ALIGNMENT);
-        button.setMaximumSize(new Dimension(420, 46));
-        button.addActionListener(e -> action.run());
-        menuPanel.add(button);
-        menuPanel.add(Box.createVerticalStrut(12));
+    void release(int key) { held.remove(key); updateMovement(); }
+    private void updateMovement() {
+        if (screen != Screen.GAME || world == null || world.state != GameWorld.State.PLAYING) return;
+        world.input.up = held.contains(KeyEvent.VK_W) || held.contains(KeyEvent.VK_UP);
+        world.input.down = held.contains(KeyEvent.VK_S) || held.contains(KeyEvent.VK_DOWN);
+        world.input.left = held.contains(KeyEvent.VK_A) || held.contains(KeyEvent.VK_LEFT);
+        world.input.right = held.contains(KeyEvent.VK_D) || held.contains(KeyEvent.VK_RIGHT);
+        world.input.focus = held.contains(KeyEvent.VK_SHIFT);
     }
-
-    private void openSettings() {
-        settingsReturnState = state;
-        showMenu(GameState.SETTINGS);
+    void escape() {
+        if (screen == Screen.GAME) {
+            if (world.state == GameWorld.State.VICTORY || world.state == GameWorld.State.DEFEAT) showMenu(Screen.START);
+            else { world.setPaused(true); showMenu(Screen.PAUSE); }
+        } else if (screen == Screen.PAUSE) resume();
+        else if (screen == Screen.SETTINGS) showMenu(settingsReturn);
+        else if (screen == Screen.BOSS_TEST) showMenu(Screen.START);
     }
-
-    private void showMenu(GameState next) {
-        clearMovement();
-        state = next;
-        menuPanel.removeAll();
-        menuText(next == GameState.START ? "CUỘC PHIÊU LƯU KÌ LẠ" :
-            next == GameState.PAUSED ? "TẠM DỪNG" : "CÀI ĐẶT", 29, new Color(255, 215, 80));
-        if (next == GameState.SETTINGS) {
-            JCheckBox audio = new JCheckBox("Bật âm thanh", sound.isSoundEnabled());
-            audio.setOpaque(false);
-            audio.setForeground(Color.WHITE);
-            audio.setFont(new Font("Arial", Font.PLAIN, 18));
-            audio.setAlignmentX(Component.CENTER_ALIGNMENT);
-            audio.addActionListener(e -> sound.setSoundEnabled(audio.isSelected()));
-            menuPanel.add(audio);
-            menuText("Âm lượng", 16, Color.WHITE);
-            JSlider volume = new JSlider(0, 100, sound.getVolume());
-            volume.setOpaque(false);
-            volume.setMaximumSize(new Dimension(420, 45));
-            volume.addChangeListener(e -> sound.setVolume(volume.getValue()));
-            menuPanel.add(volume);
-            menuText("Chưa có file âm thanh trong bản thử nghiệm.", 14, Color.LIGHT_GRAY);
-            menuText("Độ khó", 18, Color.WHITE);
-            JComboBox<Difficulty> difficulties = new JComboBox<>(Difficulty.values());
-            difficulties.setSelectedItem(difficulty);
-            difficulties.setMaximumSize(new Dimension(420, 36));
-            difficulties.setEnabled(settingsReturnState == GameState.START);
-            difficulties.addActionListener(e -> difficulty = (Difficulty) difficulties.getSelectedItem());
-            menuPanel.add(difficulties);
-            menuText("Độ khó đổi máu, sát thương, tốc độ, mật độ quái.", 14, Color.LIGHT_GRAY);
-            menuText("Ninja: né 1 / 2 / 3 lần theo độ khó.", 14, Color.LIGHT_GRAY);
-            menuText("Boss Khó: lướt 2 nhịp, báo trước ngắn hơn.", 14, Color.LIGHT_GRAY);
-            menuText("Độ khó được chọn trước khi bắt đầu ván.", 14, Color.LIGHT_GRAY);
-            menuButton("Quay lại [Esc]", () -> showMenu(settingsReturnState));
-        } else {
-            menuText(next == GameState.START ? "CỦA SVBK" : "Ván chơi đã dừng hoàn toàn", 22, Color.WHITE);
-            menuText("Độ khó: " + (next == GameState.START ? difficulty : runDifficulty), 16, Color.LIGHT_GRAY);
-            menuPanel.add(Box.createVerticalStrut(12));
-            if (next == GameState.START) menuButton("Bắt đầu", this::initGame);
-            else menuButton("Tiếp tục [Esc]", this::resumeGame);
-            menuButton("Cài đặt", this::openSettings);
-            if (next == GameState.PAUSED) menuButton("Về màn hình Start (kết thúc ván)", () -> showMenu(GameState.START));
+    void resume() {
+        boolean escapeHeld = held.contains(KeyEvent.VK_ESCAPE);
+        world.setPaused(false); held.clear();
+        if (escapeHeld) held.add(KeyEvent.VK_ESCAPE);
+        screen = Screen.GAME; menuPanel.setVisible(false); requestFocusInWindow(); repaint();
+    }
+    public void pauseForFocusLoss() {
+        held.clear();
+        if (world != null) world.input.clear();
+        if (screen == Screen.GAME && world.state != GameWorld.State.VICTORY && world.state != GameWorld.State.DEFEAT) {
+            world.setPaused(true); showMenu(Screen.PAUSE);
+        }
+    }
+    private void text(String value, int size, Color color) {
+        JLabel label = new JLabel(value); label.setFont(new Font("Arial", Font.PLAIN, size));
+        label.setForeground(color); label.setAlignmentX(Component.CENTER_ALIGNMENT);
+        menuPanel.add(label); menuPanel.add(Box.createVerticalStrut(13));
+    }
+    private void button(String value, Runnable action) {
+        JButton button = new JButton(value); button.setFont(new Font("Arial", Font.BOLD, 18));
+        button.setAlignmentX(Component.CENTER_ALIGNMENT); button.setMaximumSize(new Dimension(480, 44));
+        button.addActionListener(e -> action.run()); menuPanel.add(button); menuPanel.add(Box.createVerticalStrut(13));
+    }
+    void showMenu(Screen next) {
+        if (next == Screen.START && world != null) world.dispose();
+        screen = next; menuPanel.removeAll();
+        text(next == Screen.SETTINGS ? "CÀI ĐẶT" : next == Screen.PAUSE ? "TẠM DỪNG" : next == Screen.BOSS_TEST ? "TEST BOSS" : "CUỘC PHIÊU LƯU KÌ LẠ", 28, new Color(255, 215, 100));
+        if (next == Screen.SETTINGS) {
+            JCheckBox audio = new JCheckBox("Bật âm thanh", sound.isSoundEnabled()); audio.setForeground(Color.WHITE);
+            audio.setOpaque(false); audio.setAlignmentX(Component.CENTER_ALIGNMENT);
+            audio.addActionListener(e -> sound.setSoundEnabled(audio.isSelected())); menuPanel.add(audio);
+            text("Âm lượng (bản này chưa có file âm thanh)", 15, Color.LIGHT_GRAY);
+            JSlider slider = new JSlider(0, 100, sound.getVolume()); slider.setOpaque(false);
+            slider.setMaximumSize(new Dimension(480, 40)); slider.addChangeListener(e -> sound.setVolume(slider.getValue())); menuPanel.add(slider);
+            menuPanel.add(Box.createVerticalStrut(16));
+            text("Độ khó • chọn trước khi bắt đầu ván", 17, Color.WHITE);
+            JComboBox<Difficulty> combo = new JComboBox<>(Difficulty.values()); combo.setSelectedItem(difficulty);
+            combo.setEnabled(settingsReturn == Screen.START); combo.setMaximumSize(new Dimension(480, 36));
+            combo.addActionListener(e -> difficulty = (Difficulty) combo.getSelectedItem()); menuPanel.add(combo);
+            menuPanel.add(Box.createVerticalStrut(16));
+            text("Ảnh hưởng máu, sát thương, tốc độ, mật độ và pattern.", 15, Color.LIGHT_GRAY);
+            text("Hitbox và điều khiển giữ nguyên ở mọi mức khó.", 15, Color.LIGHT_GRAY);
+            button("Quay lại [Esc]", () -> showMenu(settingsReturn));
+        } else if (next == Screen.BOSS_TEST) {
+            if (!Boolean.getBoolean("svbk.legacyBosses")) {
+                text("Độ khó: " + difficulty, 18, Color.WHITE);
+                text("Chọn Boss • đánh trọn bộ đòn riêng", 17, Color.LIGHT_GRAY);
+                JComboBox<Th06BossId> roster = new JComboBox<>(Th06BossId.values());
+                roster.setSelectedItem(selectedOriginalBoss); roster.setMaximumSize(new Dimension(480, 36));
+                roster.addActionListener(e -> selectedOriginalBoss = (Th06BossId) roster.getSelectedItem()); menuPanel.add(roster);
+                menuPanel.add(Box.createVerticalStrut(15));
+                text("Nhánh đòn Boss theo nhân vật TH06", 15, Color.LIGHT_GRAY);
+                JComboBox<String> route = new JComboBox<>(new String[]{"Reimu A", "Reimu B", "Marisa A", "Marisa B"});
+                route.setSelectedIndex(selectedOriginalRoute); route.setMaximumSize(new Dimension(480, 36));
+                route.addActionListener(e -> selectedOriginalRoute = route.getSelectedIndex()); menuPanel.add(route);
+                menuPanel.add(Box.createVerticalStrut(15));
+                text("4 vũ khí cấp 4 • 100 HP • 3 Bomb", 16, Color.LIGHT_GRAY);
+                button("Đánh Boss đã chọn", () -> startOriginalBoss(selectedSeed, selectedOriginalBoss, selectedOriginalRoute));
+                button("Quay lại [Esc]", () -> showMenu(Screen.START));
+                if (!bossLoadError.isEmpty()) text("Không mở được dữ liệu TH06. Xem host-errors.log.", 15, new Color(255, 140, 150));
+                menuPanel.add(Box.createVerticalGlue());
+                text("Shift: Focus • X: Dash • Space: Bomb", 16, Color.LIGHT_GRAY);
+                text("Thắng / thua: Enter để thử lại cùng Boss", 16, Color.LIGHT_GRAY);
+            } else {
+            text("Độ khó: " + difficulty, 18, Color.WHITE);
+            text("Vào thẳng đấu trường, đánh đủ 3 pha.", 17, Color.LIGHT_GRAY);
+            text("Build thử: 4 vũ khí cấp 4 + nội tại", 16, Color.LIGHT_GRAY);
+            text("100 HP • 3 Bomb • không bị ngắt để lên cấp", 16, Color.LIGHT_GRAY);
+            button("Test Boss giữa", () -> startBossTest(selectedSeed, 0));
+            button("Test Boss cuối", () -> startBossTest(selectedSeed, 1));
+            button("Quay lại [Esc]", () -> showMenu(Screen.START));
             menuPanel.add(Box.createVerticalGlue());
-            menuText("WASD / Mũi tên: di chuyển", 16, Color.LIGHT_GRAY);
-            menuText("1 / 2 / 3: nâng cấp • Esc: tạm dừng / tiếp tục", 16, Color.LIGHT_GRAY);
-        }
-        menuPanel.setVisible(true);
-        menuPanel.revalidate();
-        repaint();
-    }
-
-    private void addEnemy(Enemy enemy) {
-        enemy.applyDifficulty(runDifficulty);
-        enemies.add(enemy);
-    }
-
-    /**
-     * Vòng lặp chính thực thi mỗi frame
-     */
-    private void gameLoop() {
-        if (state == GameState.PLAYING) {
-            updateGame();
-        }
-        repaint();
-    }
-
-    /**
-     * Cập nhật logic game
-     */
-    private void updateGame() {
-        frameCount++;
-        if (frameCount % 60 == 0) {
-            elapsedSeconds++;
-            // Tăng độ khó: giảm thời gian chờ giữa các lần sinh quái
-            if (elapsedSeconds % 10 == 0) {
-                spawnInterval = Math.max(runDifficulty.minimumInterval, spawnInterval - 3);
+            text("Shift: Focus • X: Dash • Space: Bomb", 16, Color.LIGHT_GRAY);
+            text("Thắng / thua: Enter để thử lại cùng Boss", 16, Color.LIGHT_GRAY);
             }
-        }
-
-        // 1. Cập nhật Player di chuyển
-        player.move();
-        if (inBossRoom) {
-            // Giới hạn người chơi trong phòng đấu kín (kích thước 1000x750)
-            player.clampToBounds(20, 20, SCREEN_WIDTH - 20, SCREEN_HEIGHT - 20);
-        }
-        player.update();
-
-        // Cập nhật vị trí Camera
-        if (inBossRoom) {
-            // Camera cố định tại phòng đấu Boss
-            cameraX = 0;
-            cameraY = 0;
         } else {
-            // Camera bám theo Player
-            cameraX = player.getX() + (player.getWidth() / 2.0) - (SCREEN_WIDTH / 2.0);
-            cameraY = player.getY() + (player.getHeight() / 2.0) - (SCREEN_HEIGHT / 2.0);
+            text(next == Screen.START ? "CỦA SVBK • DANMAKU SURVIVORS" : "Mọi đồng hồ chiến đấu đã dừng", 18, Color.WHITE);
+            text("Độ khó: " + (next == Screen.START ? difficulty : world.difficulty), 16, Color.LIGHT_GRAY);
+            if (next == Screen.START) {
+                text("Seed • nhập lại để tái hiện cùng một run", 14, Color.LIGHT_GRAY);
+                seedField = new JTextField(Long.toString(selectedSeed)); seedField.setMaximumSize(new Dimension(480, 32));
+                seedField.setHorizontalAlignment(JTextField.CENTER); menuPanel.add(seedField); menuPanel.add(Box.createVerticalStrut(14));
+                button("Bắt đầu", () -> startFromSeed(false));
+                button("Test Boss", () -> startFromSeed(true));
+                if (!bossLoadError.isEmpty()) text("Thiếu dữ liệu hoặc bộ chạy TH06. Xem README.", 14, new Color(255,140,150));
+            } else button("Tiếp tục [Esc]", this::resume);
+            button("Cài đặt", () -> { settingsReturn = screen; showMenu(Screen.SETTINGS); });
+            if (next == Screen.PAUSE) button("Về Start • kết thúc ván", () -> { selectedSeed++; held.clear(); showMenu(Screen.START); });
+            if (next == Screen.PAUSE && world.isBossTest())
+                button("Chơi lại Test Boss", this::replay);
+            menuPanel.add(Box.createVerticalGlue());
+            text("WASD / Mũi tên: di chuyển • Shift: Focus", 16, Color.LIGHT_GRAY);
+            text("X: Dash không bất tử • Space: Bomb", 16, Color.LIGHT_GRAY);
+            text("1 / 2 / 3: nâng cấp • R: đổi lựa chọn • Esc: tạm dừng", 16, Color.LIGHT_GRAY);
+            text("4 vũ khí + 4 nội tại • Mỗi Boss có bộ đòn riêng", 14, new Color(255, 215, 100));
         }
-
-        // 2. Cập nhật vũ khí của Player
-        for (Weapon weapon : player.getWeapons()) {
-            weapon.update(player, enemies, projectiles, damageTexts, sound);
-        }
-
-        // 3. Cơ chế Cổng dịch chuyển Portal
-        // Ở sàn thường: sau 60 giây xuất hiện Cổng Boss ngay gần vị trí Player
-        if (!inBossRoom && elapsedSeconds >= 60 && !portalSpawned) {
-            portalSpawned = true;
-            portal = new Portal(player.getX() + 60, player.getY(), new Color(100, 200, 255, 180), new Color(180, 50, 255, 150), "BOSS PORTAL");
-        }
-
-        // Cập nhật portal & kiểm tra dịch chuyển
-        if (portal != null) {
-            portal.update();
-            if (player.getBounds().intersects(portal.getBounds())) {
-                if (!inBossRoom) {
-                    enterBossRoom();
-                } else {
-                    exitBossRoom();
-                }
-            }
-        }
-
-        // 4. Sinh quái vật định kỳ
-        spawnEnemies();
-
-        // 5. Cập nhật quái vật di chuyển & vũ khí Boss
-        for (Enemy enemy : enemies) {
-            enemy.moveTowards(player);
-            enemy.update();
-
-            // Nếu là Boss có vũ khí (Mirror Boss), cập nhật vũ khí của Boss
-            if (enemy instanceof Boss) {
-                ((Boss) enemy).updateWeapons(player, projectiles, damageTexts, sound);
-                if (player.isDead()) {
-                    state = GameState.GAME_OVER;
-                    sound.playGameOver();
-                    return;
-                }
-            }
-
-            // Va chạm gây sát thương lên người chơi
-            if (player.getBounds().intersects(enemy.getBounds())) {
-                if (player.hitFlashTimer == 0) {
-                    player.takeDamage(enemy.getContactDamage());
-                    damageTexts.add(new DamageText(player.getX(), player.getY() - 10, "-" + (int) enemy.getContactDamage(), Color.RED, true));
-                    sound.playHit();
-                    if (player.isDead()) {
-                        state = GameState.GAME_OVER;
-                        sound.playGameOver();
-                        return;
-                    }
-                }
-            }
-        }
-
-        // 6. Cập nhật đạn và va chạm đạn
-        Iterator<Projectile> projIt = projectiles.iterator();
-        while (projIt.hasNext()) {
-            Projectile p = projIt.next();
-            p.update();
-
-            if (p.isHostile()) {
-                // Đạn của Boss nhắm vào Player
-                if (!player.isDead() && p.getBounds().intersects(player.getBounds())) {
-                    if (player.hitFlashTimer == 0) {
-                        player.takeDamage(p.getDamage());
-                        damageTexts.add(new DamageText(player.getX(), player.getY() - 10, "-" + (int) p.getDamage(), Color.RED, true));
-                        sound.playHit();
-                        p.setDead(true);
-                        if (player.isDead()) {
-                            state = GameState.GAME_OVER;
-                            sound.playGameOver();
-                            return;
-                        }
-                    }
-                }
-            } else {
-                // Đạn của người chơi nhắm vào quái vật
-                // Kiểm tra quái né đạn (nếu là NinjaZombie có phản xạ né)
-                for (Enemy enemy : enemies) {
-                    if (!enemy.isDead() && enemy instanceof NinjaZombie) {
-                        NinjaZombie ninja = (NinjaZombie) enemy;
-                        if (ninja.checkAndDodge(projectiles)) {
-                            damageTexts.add(new DamageText(ninja.getX(), ninja.getY() - 15, "DODGE!", new Color(180, 100, 255), true));
-                        }
-                    }
-                }
-
-                // Kiểm tra va chạm với quái
-                for (Enemy enemy : enemies) {
-                    if (!enemy.isDead() && p.getBounds().intersects(enemy.getBounds())) {
-                        enemy.takeDamage(p.getDamage());
-                        damageTexts.add(new DamageText(enemy.getX(), enemy.getY() - 10, String.valueOf((int) p.getDamage()), Color.YELLOW, false));
-                        sound.playHit();
-                        p.setDead(true);
-                        break;
-                    }
-                }
-            }
-
-            if (p.isDead()) {
-                projIt.remove();
-            }
-        }
-
-        // 7. Xử lý quái chết & rơi vật phẩm
-        Iterator<Enemy> enemyIt = enemies.iterator();
-        while (enemyIt.hasNext()) {
-            Enemy enemy = enemyIt.next();
-            if (enemy.isDead()) {
-                player.incrementKillCount();
-                // Rơi ngọc kinh nghiệm
-                dropItems.add(new ExpGem(enemy.getCenterX(), enemy.getCenterY(), enemy.getExpReward()));
-
-                // 6% tỉ lệ rơi thêm bình máu
-                if (random.nextDouble() < 0.06) {
-                    dropItems.add(new HealthPotion(enemy.getCenterX() + 10, enemy.getCenterY()));
-                }
-
-                // Nếu là Boss trong Boss Room bị hạ gục
-                if (inBossRoom && enemy instanceof Boss) {
-                    bossDefeatedInRoom = true;
-                    // Rơi siêu ngọc EXP thưởng lớn và bình máu
-                    dropItems.add(new ExpGem(enemy.getCenterX() - 20, enemy.getCenterY(), 50));
-                    dropItems.add(new ExpGem(enemy.getCenterX() + 20, enemy.getCenterY(), 50));
-                    dropItems.add(new HealthPotion(enemy.getCenterX(), enemy.getCenterY() + 20));
-                    // Mở cổng Portal màu vàng quay về thế giới chính
-                    portal = new Portal(SCREEN_WIDTH / 2.0 - 25, SCREEN_HEIGHT / 2.0 - 25,
-                            new Color(255, 215, 0, 200), new Color(255, 120, 0, 160), "RETURN PORTAL");
-                }
-
-                enemyIt.remove();
-            }
-        }
-
-        // 8. Cập nhật vật phẩm rơi rớt
-        Iterator<DropItem> itemIt = dropItems.iterator();
-        while (itemIt.hasNext()) {
-            DropItem item = itemIt.next();
-            item.update(player);
-            if (item.isCollected()) {
-                sound.playGem();
-                // Nếu nhặt xong mà đủ điểm lên cấp
-                if (player.getCurrentExp() >= player.getExpToNextLevel()) {
-                    triggerLevelUp();
-                }
-                itemIt.remove();
-            }
-        }
-
-        // 9. Cập nhật số sát thương nổi
-        damageTexts.removeIf(dt -> {
-            dt.update();
-            return dt.isDead();
-        });
+        menuPanel.setVisible(true); menuPanel.revalidate(); repaint();
     }
-
-    /**
-     * Cơ chế xuất hiện quái vật theo thời gian
-     */
-    private void spawnEnemies() {
-        // Trong không gian phòng Boss: không sinh quái thường
-        if (inBossRoom) {
-            return;
-        }
-
-        int margin = 50; // Khoảng cách sinh quái bên ngoài mép màn hình
-
-        // Sinh Boss phút thứ 1 và 2 tại vị trí phía trên/dưới màn hình hiện tại
-        if (elapsedSeconds >= 60 && !bossSpawned1Min) {
-            bossSpawned1Min = true;
-            addEnemy(new Boss(cameraX + SCREEN_WIDTH / 2.0, cameraY - margin));
-        }
-        if (elapsedSeconds >= 120 && !bossSpawned2Min) {
-            bossSpawned2Min = true;
-            addEnemy(new Boss(cameraX + SCREEN_WIDTH / 2.0, cameraY + SCREEN_HEIGHT + margin));
-        }
-
-
-        if (frameCount % spawnInterval == 0) {
-            int side = random.nextInt(4); // 0: Trên, 1: Dưới, 2: Trái, 3: Phải
-            double spawnX = 0, spawnY = 0;
-
-            switch (side) {
-                case 0: // Phía trên màn hình
-                    spawnX = cameraX + random.nextInt(SCREEN_WIDTH);
-                    spawnY = cameraY - margin;
-                    break;
-                case 1: // Phía dưới màn hình
-                    spawnX = cameraX + random.nextInt(SCREEN_WIDTH);
-                    spawnY = cameraY + SCREEN_HEIGHT + margin;
-                    break;
-                case 2: // Bên trái màn hình
-                    spawnX = cameraX - margin;
-                    spawnY = cameraY + random.nextInt(SCREEN_HEIGHT);
-                    break;
-                case 3: // Bên phải màn hình
-                    spawnX = cameraX + SCREEN_WIDTH + margin;
-                    spawnY = cameraY + random.nextInt(SCREEN_HEIGHT);
-                    break;
-            }
-
-            int roll = random.nextInt(100);
-            if (elapsedSeconds < 20) {
-                addEnemy(new Bat(spawnX, spawnY));
-            } else if (elapsedSeconds < 50) {
-                if (roll < 50) addEnemy(new Bat(spawnX, spawnY));
-                else if (roll < 80) addEnemy(new Zombie(spawnX, spawnY));
-                else addEnemy(new NinjaZombie(spawnX, spawnY)); // 20% sinh NinjaZombie
-            } else {
-                if (roll < 30) addEnemy(new Bat(spawnX, spawnY));
-                else if (roll < 55) addEnemy(new Zombie(spawnX, spawnY));
-                else if (roll < 80) addEnemy(new NinjaZombie(spawnX, spawnY)); // 25% sinh NinjaZombie
-                else addEnemy(new Skeleton(spawnX, spawnY));
-            }
+    @Override protected void paintComponent(Graphics graphics) {
+        super.paintComponent(graphics);
+        if (world != null && screen != Screen.START) renderer.draw((Graphics2D) graphics, world);
+        if (screen != Screen.GAME) {
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setColor(new Color(0, 0, 0, 175)); g.fillRect(0, 0, 1000, 750); g.dispose();
         }
     }
-
-    /**
-     * Kích hoạt giao diện Lên cấp (Level Up)
-     */
-    private void triggerLevelUp() {
-        // 1. Tạm dừng di chuyển của người chơi (tránh kẹt phím)
-        player.setUp(false);
-        player.setDown(false);
-        player.setLeft(false);
-        player.setRight(false);
-
-        // 2. Chuyển trạng thái game & phát âm thanh
-        state = GameState.LEVEL_UP;
-        sound.playLevelUp();
-        
-        // 3. Tạo 3 lựa chọn nâng cấp
-        generateUpgradeChoices();
-    }
-
-    /**
-     * Tạo 3 lựa chọn nâng cấp ngẫu nhiên phong phú
-     */
-    private void generateUpgradeChoices() {
-        List<UpgradeOption> pool = new ArrayList<>();
-
-        // Kiểm tra Gậy phép Magic Wand
-        Weapon wand = player.getWeapon(MagicWand.class);
-        if (wand != null && !wand.isMaxLevel()) {
-            pool.add(new UpgradeOption("Nâng cấp Magic Wand (Lv " + (wand.getLevel() + 1) + ")",
-                wand.getDescription(), "VŨ KHÍ", new Color(70, 180, 255), wand::upgrade));
-        }
-
-        // Kiểm tra Vòng phi đao OrbitBlade
-        Weapon blade = player.getWeapon(OrbitBlade.class);
-        if (blade == null) {
-            pool.add(new UpgradeOption("Mở khóa Orbit Blades (Lv 1)",
-                "Nhận phi đao hộ thể xoay tròn quanh người.", "VŨ KHÍ MỚI", new Color(255, 200, 50),
-                () -> player.addWeapon(new OrbitBlade())));
-        } else if (!blade.isMaxLevel()) {
-            pool.add(new UpgradeOption("Nâng cấp Orbit Blades (Lv " + (blade.getLevel() + 1) + ")",
-                blade.getDescription(), "VŨ KHÍ", new Color(255, 200, 50), blade::upgrade));
-        }
-
-        // Kiểm tra Hào quang HolyAura
-        Weapon aura = player.getWeapon(HolyAura.class);
-        if (aura == null) {
-            pool.add(new UpgradeOption("Mở khóa Holy Aura (Lv 1)",
-                "Tỏa sóng xung kích đẩy lùi và hủy diệt quái xung quanh.", "VŨ KHÍ MỚI", new Color(255, 230, 100),
-                () -> player.addWeapon(new HolyAura())));
-        } else if (!aura.isMaxLevel()) {
-            pool.add(new UpgradeOption("Nâng cấp Holy Aura (Lv " + (aura.getLevel() + 1) + ")",
-                aura.getDescription(), "VŨ KHÍ", new Color(255, 230, 100), aura::upgrade));
-        }
-
-        // Các nâng cấp nội tại của nhân vật
-        pool.add(new UpgradeOption("Tăng Tốc Độ Di Chuyển (+15%)",
-            "Giúp nhân vật lạng lách né quái nhanh nhẹn hơn.", "CHỈ SỐ", new Color(80, 250, 150),
-            () -> player.setSpeed(player.getSpeed() * 1.15)));
-
-        pool.add(new UpgradeOption("Tăng Bán Kính Thu Thập (+35%)",
-            "Hút hạt kinh nghiệm và bình máu từ khoảng cách xa hơn.", "NỘI TẠI", new Color(200, 100, 255),
-            () -> player.setPickupRadius(player.getPickupRadius() * 1.35)));
-
-        pool.add(new UpgradeOption("Tăng Sức Mạnh Toàn Diện (+20%)",
-            "Gia tăng 20% lượng sát thương gây ra cho tất cả vũ khí.", "SỨC MẠNH", new Color(255, 90, 90),
-            () -> player.setDamageMultiplier(player.getDamageMultiplier() * 1.2)));
-
-        pool.add(new UpgradeOption("Hồi Phục Sinh Lực Toàn Bộ",
-            "Lập tức hồi đầy 100% lượng máu của bạn.", "HỒI MÁU", new Color(50, 220, 100),
-            () -> player.setHp(player.getMaxHp())));
-
-        // Lấy 3 lựa chọn ngẫu nhiên
-        Collections.shuffle(pool);
-        activeUpgradeChoices = pool.subList(0, Math.min(3, pool.size()));
-
-        // Thiết lập kích thước thẻ hiển thị
-        int cardW = 260;
-        int cardH = 340;
-        int startX = (SCREEN_WIDTH - (3 * cardW + 2 * 30)) / 2;
-        int cardY = (SCREEN_HEIGHT - cardH) / 2 + 30;
-
-        for (int i = 0; i < activeUpgradeChoices.size(); i++) {
-            upgradeCardBounds[i] = new Rectangle(startX + i * (cardW + 30), cardY, cardW, cardH);
-        }
-    }
-
-    private void selectUpgrade(int index) {
-        if (index >= 0 && index < activeUpgradeChoices.size()) {
-            // Áp dụng chỉ số nâng cấp đã chọn
-            activeUpgradeChoices.get(index).apply();
-            
-            // Trừ EXP đã tích lũy và tăng Cấp độ nhân vật
-            player.consumeExpAndLevelUp();
-
-            state = GameState.PLAYING;
-
-            // Kiểm tra xem lượng EXP dư còn lại có đủ để Lên cấp tiếp hay không
-            if (player.getCurrentExp() >= player.getExpToNextLevel()) {
-                triggerLevelUp();
-            }
-        }
-    }
-
-    @Override
-    protected void paintComponent(Graphics g) {
-        super.paintComponent(g);
-        Graphics2D g2 = (Graphics2D) g;
-
-        // Bật khử răng cưa
-        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-
-        // ================= 1. VẼ THẾ GIỚI GAME (CÓ TÁC DỤNG BỞI CAMERA) =================
-        // Dịch chuyển hệ tọa độ theo Camera
-        g2.translate(-cameraX, -cameraY);
-
-        // Vẽ nền thế giới (tùy theo sàn thường hay phòng Boss)
-        drawArena(g2);
-
-        // Vẽ cổng dịch chuyển nếu đang mở
-        if (portal != null) {
-            portal.draw(g2);
-        }
-
-        for (DropItem item : dropItems) {
-            item.draw(g2);
-        }
-        for (Enemy enemy : enemies) {
-            enemy.draw(g2);
-        }
-        for (Projectile p : projectiles) {
-            p.draw(g2);
-        }
-        player.draw(g2);
-        for (Weapon weapon : player.getWeapons()) {
-            weapon.draw(g2, player);
-        }
-        for (DamageText dt : damageTexts) {
-            dt.draw(g2);
-        }
-
-        // Khôi phục lại hệ tọa độ màn hình tĩnh cho giao diện HUD / Menu
-        g2.translate(cameraX, cameraY);
-
-        // ================= 2. VẼ GIAO DIỆN HUD / MENU (TỌA ĐỘ MÀN HÌNH TĨNH) =================
-        drawHUD(g2);
-
-        if (state == GameState.LEVEL_UP) {
-            drawLevelUpModal(g2);
-        }
-
-        if (state == GameState.GAME_OVER) {
-            drawGameOverScreen(g2);
-        }
-        if (state == GameState.START || state == GameState.PAUSED || state == GameState.SETTINGS) {
-            g2.setColor(new Color(0, 0, 0, 190));
-            g2.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-        }
-    }
-
-    /**
-     * Dịch chuyển vào không gian Boss Room biệt lập
-     */
-    private void enterBossRoom() {
-        inBossRoom = true;
-        portal = null; // Đóng cổng vào
-        bossDefeatedInRoom = false;
-
-        // Lưu lại vị trí của player ở sàn đấu ngoài
-        returnPlayerX = player.getX();
-        returnPlayerY = player.getY();
-
-        // Lưu lại danh sách quái và đồ ở sàn ngoài để không bị mất
-        savedEnemies = new ArrayList<>(enemies);
-        savedDropItems = new ArrayList<>(dropItems);
-        savedProjectiles = new ArrayList<>(projectiles);
-
-        enemies.clear();
-        dropItems.clear();
-        projectiles.clear();
-
-        // Đặt người chơi ở góc dưới phòng đấu Boss
-        player.setX(SCREEN_WIDTH / 2.0 - 17);
-        player.setY(SCREEN_HEIGHT - 120);
-
-        // Sinh Boss hoành tráng ở phía trên phòng và sao chép toàn bộ chỉ số & vũ khí từ người chơi
-        Boss boss = new Boss(SCREEN_WIDTH / 2.0 - 27, 100);
-        boss.copyFromPlayer(player);
-        addEnemy(boss);
-
-        // Thông báo sát thương nổi thông báo vào trận Boss
-        damageTexts.add(new DamageText(player.getX(), player.getY() - 30, "BOSS BATTLE! MIRROR BOSS", Color.MAGENTA, true));
-    }
-
-    /**
-     * Rời khỏi phòng Boss để quay lại thế giới chính
-     */
-    private void exitBossRoom() {
-        inBossRoom = false;
-        portal = null; // Đóng cổng ra
-
-        // Khôi phục vị trí người chơi sàn ngoài
-        player.setX(returnPlayerX);
-        player.setY(returnPlayerY);
-
-        // Khôi phục quái và vật phẩm cũ
-        enemies = new ArrayList<>(savedEnemies);
-        dropItems = new ArrayList<>(savedDropItems);
-        projectiles = new ArrayList<>(savedProjectiles);
-
-        savedEnemies.clear();
-        savedDropItems.clear();
-        savedProjectiles.clear();
-
-        damageTexts.add(new DamageText(player.getX(), player.getY() - 30, "VICTORY! RETURNED", Color.YELLOW, true));
-    }
-
-    /**
-     * Vẽ bản đồ đấu trường với gạch đá và viền thành trì
-     */
-    private void drawArena(Graphics2D g2) {
-        if (inBossRoom) {
-            // Sàn đấu Boss Room biệt lập: Không gian hắc ám rực lửa
-            int tileSize = 50;
-            for (int x = 0; x < SCREEN_WIDTH; x += tileSize) {
-                for (int y = 0; y < SCREEN_HEIGHT; y += tileSize) {
-                    if ((x / tileSize + y / tileSize) % 2 == 0) {
-                        g2.setColor(new Color(45, 12, 18));
-                    } else {
-                        g2.setColor(new Color(30, 8, 12));
-                    }
-                    g2.fillRect(x, y, tileSize, tileSize);
-                    g2.setColor(new Color(75, 20, 25));
-                    g2.drawRect(x, y, tileSize, tileSize);
-                }
-            }
-
-            // Viền rào chắn phong ấn đấu trường Boss
-            g2.setColor(new Color(255, 50, 60));
-            g2.setStroke(new BasicStroke(6f));
-            g2.drawRect(10, 10, SCREEN_WIDTH - 20, SCREEN_HEIGHT - 20);
-            g2.setStroke(new BasicStroke(1f));
-        } else {
-            int tileSize = 60;
-
-            // Tính toán tọa độ bắt đầu vẽ dựa trên Camera để tạo hiệu ứng cuộn vô hạn
-            long startX = (long) Math.floor(cameraX / tileSize) * tileSize;
-            long startY = (long) Math.floor(cameraY / tileSize) * tileSize;
-
-            for (long x = startX; x < cameraX + SCREEN_WIDTH + tileSize; x += tileSize) {
-                for (long y = startY; y < cameraY + SCREEN_HEIGHT + tileSize; y += tileSize) {
-                    // Xen kẽ màu ô gạch
-                    if ((Math.abs(x / tileSize) + Math.abs(y / tileSize)) % 2 == 0) {
-                        g2.setColor(new Color(24, 25, 33));
-                    } else {
-                        g2.setColor(new Color(19, 20, 27));
-                    }
-                    g2.fillRect((int) x, (int) y, tileSize, tileSize);
-                    g2.setColor(new Color(35, 37, 48));
-                    g2.drawRect((int) x, (int) y, tileSize, tileSize);
-                }
-            }
-        }
-    }
-
-    /**
-     * Vẽ giao diện thông tin trạng thái người chơi (HUD)
-     */
-    private void drawHUD(Graphics2D g2) {
-        // Thanh EXP toàn màn hình trên đỉnh
-        int barH = 14;
-        g2.setColor(new Color(30, 30, 45));
-        g2.fillRect(0, 0, SCREEN_WIDTH, barH);
-
-        double expProgress = (double) player.getCurrentExp() / player.getExpToNextLevel();
-        int expW = (int) (SCREEN_WIDTH * expProgress);
-        g2.setColor(new Color(60, 180, 255));
-        g2.fillRect(0, 0, expW, barH);
-
-        // Cấp độ nhân vật
-        g2.setFont(new Font("Arial", Font.BOLD, 14));
-        g2.setColor(Color.WHITE);
-        g2.drawString("LV " + player.getLevel(), 15, barH + 22);
-
-        // Đồng hồ sinh tồn (Timer)
-        int min = elapsedSeconds / 60;
-        int sec = elapsedSeconds % 60;
-        String timeStr = String.format("%02d:%02d", min, sec);
-        g2.setFont(new Font("Arial", Font.BOLD, 22));
-        g2.drawString(timeStr, SCREEN_WIDTH / 2 - 30, barH + 26);
-
-        // Số quái đã diệt
-        g2.setFont(new Font("Arial", Font.BOLD, 14));
-        g2.drawString("KILLS: " + player.getKillCount(), SCREEN_WIDTH - 120, barH + 22);
-        g2.drawString(runDifficulty + " | Esc: tạm dừng", SCREEN_WIDTH - 210, barH + 45);
-
-        // Máu người chơi
-        g2.drawString(String.format("HP: %d / %d", (int) player.getHp(), (int) player.getMaxHp()), 15, barH + 45);
-
-        // Danh sách vũ khí sở hữu
-        int wx = 15;
-        for (Weapon w : player.getWeapons()) {
-            g2.setColor(new Color(40, 45, 65, 200));
-            g2.fillRoundRect(wx, barH + 52, 100, 24, 6, 6);
-            g2.setColor(Color.YELLOW);
-            g2.setFont(new Font("Arial", Font.BOLD, 11));
-            g2.drawString(w.getName() + " L" + w.getLevel(), wx + 8, barH + 68);
-            wx += 110;
-        }
-    }
-
-    /**
-     * Vẽ bảng chọn 3 thẻ nâng cấp khi lên cấp
-     */
-    private void drawLevelUpModal(Graphics2D g2) {
-        // Lớp phủ đen mờ hậu cảnh
-        g2.setColor(new Color(0, 0, 0, 175));
-        g2.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-
-        // Tiêu đề Lên Cấp
-        g2.setColor(new Color(255, 215, 0));
-        g2.setFont(new Font("Arial", Font.BOLD, 36));
-        String title = "★ LEVEL UP! CHỌN NÂNG CẤP ★";
-        int titleW = g2.getFontMetrics().stringWidth(title);
-        g2.drawString(title, (SCREEN_WIDTH - titleW) / 2, (SCREEN_HEIGHT - 340) / 2 - 15);
-
-        g2.setFont(new Font("Arial", Font.PLAIN, 15));
-        g2.setColor(new Color(200, 200, 200));
-        String hint = "Nhấp chuột vào thẻ bài hoặc bấm phím 1, 2, 3 để chọn";
-        int hintW = g2.getFontMetrics().stringWidth(hint);
-        g2.drawString(hint, (SCREEN_WIDTH - hintW) / 2, (SCREEN_HEIGHT - 340) / 2 + 15);
-
-        // Vẽ 3 thẻ bài
-        for (int i = 0; i < activeUpgradeChoices.size(); i++) {
-            UpgradeOption opt = activeUpgradeChoices.get(i);
-            Rectangle rect = upgradeCardBounds[i];
-            boolean hovered = (i == hoveredCardIndex);
-
-            // Nền thẻ
-            if (hovered) {
-                g2.setColor(new Color(35, 45, 75));
-            } else {
-                g2.setColor(new Color(25, 30, 48));
-            }
-            g2.fillRoundRect(rect.x, rect.y, rect.width, rect.height, 14, 14);
-
-            // Viền thẻ
-            g2.setColor(hovered ? Color.YELLOW : new Color(70, 80, 120));
-            g2.setStroke(new BasicStroke(hovered ? 3.0f : 1.5f));
-            g2.drawRoundRect(rect.x, rect.y, rect.width, rect.height, 14, 14);
-            g2.setStroke(new BasicStroke(1.0f));
-
-            // Số thứ tự phím tắt [1], [2], [3]
-            g2.setColor(Color.WHITE);
-            g2.setFont(new Font("Arial", Font.BOLD, 13));
-            g2.drawString("[" + (i + 1) + "]", rect.x + 15, rect.y + 28);
-
-            // Nhãn thể loại thẻ
-            g2.setColor(opt.getTagColor());
-            g2.fillRoundRect(rect.x + rect.width - 95, rect.y + 14, 80, 20, 8, 8);
-            g2.setColor(Color.BLACK);
-            g2.setFont(new Font("Arial", Font.BOLD, 10));
-            g2.drawString(opt.getTag(), rect.x + rect.width - 85, rect.y + 28);
-
-            // Tên thẻ nâng cấp
-            g2.setColor(Color.WHITE);
-            g2.setFont(new Font("Arial", Font.BOLD, 16));
-            drawWrappedString(g2, opt.getTitle(), rect.x + 15, rect.y + 70, rect.width - 30);
-
-            // Đường phân cách
-            g2.setColor(new Color(60, 70, 95));
-            g2.drawLine(rect.x + 15, rect.y + 130, rect.x + rect.width - 15, rect.y + 130);
-
-            // Mô tả chi tiết hiệu ứng
-            g2.setColor(new Color(200, 210, 230));
-            g2.setFont(new Font("Arial", Font.PLAIN, 14));
-            drawWrappedString(g2, opt.getDescription(), rect.x + 15, rect.y + 160, rect.width - 30);
-        }
-    }
-
-    /**
-     * Vẽ màn hình Game Over
-     */
-    private void drawGameOverScreen(Graphics2D g2) {
-        g2.setColor(new Color(0, 0, 0, 200));
-        g2.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-
-        g2.setColor(new Color(255, 50, 50));
-        g2.setFont(new Font("Arial", Font.BOLD, 50));
-        String overText = "BẠN ĐÃ TỬ NẠN!";
-        int tw = g2.getFontMetrics().stringWidth(overText);
-        g2.drawString(overText, (SCREEN_WIDTH - tw) / 2, SCREEN_HEIGHT / 2 - 80);
-
-        g2.setColor(Color.WHITE);
-        g2.setFont(new Font("Arial", Font.PLAIN, 20));
-        int min = elapsedSeconds / 60;
-        int sec = elapsedSeconds % 60;
-        String stats1 = String.format("Thời gian sinh tồn: %02d phút %02d giây", min, sec);
-        String stats2 = "Số quái vật đã tiêu diệt: " + player.getKillCount();
-        String stats3 = "Cấp độ đạt được: Cấp " + player.getLevel();
-
-        g2.drawString(stats1, (SCREEN_WIDTH - g2.getFontMetrics().stringWidth(stats1)) / 2, SCREEN_HEIGHT / 2 - 10);
-        g2.drawString(stats2, (SCREEN_WIDTH - g2.getFontMetrics().stringWidth(stats2)) / 2, SCREEN_HEIGHT / 2 + 25);
-        g2.drawString(stats3, (SCREEN_WIDTH - g2.getFontMetrics().stringWidth(stats3)) / 2, SCREEN_HEIGHT / 2 + 60);
-
-        // Nút chơi lại
-        g2.setColor(new Color(70, 180, 255));
-        g2.setFont(new Font("Arial", Font.BOLD, 22));
-        String restartText = ">> BẤM PHÍM SPACE HOẶC NHẤP CHUỘT ĐỂ CHƠI LẠI <<";
-        int rw = g2.getFontMetrics().stringWidth(restartText);
-        g2.drawString(restartText, (SCREEN_WIDTH - rw) / 2, SCREEN_HEIGHT / 2 + 130);
-    }
-
-    /**
-     * Hỗ trợ vẽ chuỗi văn bản tự động xuống dòng đẹp mắt
-     */
-    private void drawWrappedString(Graphics2D g2, String text, int x, int y, int maxWidth) {
-        FontMetrics fm = g2.getFontMetrics();
-        String[] words = text.split(" ");
-        StringBuilder currentLine = new StringBuilder();
-        int currentY = y;
-
-        for (String word : words) {
-            if (fm.stringWidth(currentLine + word) < maxWidth) {
-                currentLine.append(word).append(" ");
-            } else {
-                g2.drawString(currentLine.toString(), x, currentY);
-                currentLine = new StringBuilder(word + " ");
-                currentY += fm.getHeight() + 2;
-            }
-        }
-        if (currentLine.length() > 0) {
-            g2.drawString(currentLine.toString(), x, currentY);
-        }
-    }
-
-    // ================= Xử lý Sự kiện Bàn phím =================
-    @Override
-    public void keyPressed(KeyEvent e) {
-        int code = e.getKeyCode();
-
-        if (state == GameState.PLAYING) {
-            if (code == KeyEvent.VK_W || code == KeyEvent.VK_UP) player.setUp(true);
-            if (code == KeyEvent.VK_S || code == KeyEvent.VK_DOWN) player.setDown(true);
-            if (code == KeyEvent.VK_A || code == KeyEvent.VK_LEFT) player.setLeft(true);
-            if (code == KeyEvent.VK_D || code == KeyEvent.VK_RIGHT) player.setRight(true);
-        } else if (state == GameState.LEVEL_UP) {
-            if (code == KeyEvent.VK_1) selectUpgrade(0);
-            if (code == KeyEvent.VK_2) selectUpgrade(1);
-            if (code == KeyEvent.VK_3) selectUpgrade(2);
-        } else if (state == GameState.GAME_OVER) {
-            if (code == KeyEvent.VK_SPACE || code == KeyEvent.VK_ENTER) {
-                initGame();
-            }
-        }
-    }
-
-    @Override
-    public void keyReleased(KeyEvent e) {
-        int code = e.getKeyCode();
-        if (code == KeyEvent.VK_W || code == KeyEvent.VK_UP) player.setUp(false);
-        if (code == KeyEvent.VK_S || code == KeyEvent.VK_DOWN) player.setDown(false);
-        if (code == KeyEvent.VK_A || code == KeyEvent.VK_LEFT) player.setLeft(false);
-        if (code == KeyEvent.VK_D || code == KeyEvent.VK_RIGHT) player.setRight(false);
-    }
-
-    @Override
-    public void keyTyped(KeyEvent e) {}
-
-    // ================= Xử lý Sự kiện Chuột =================
-    @Override
-    public void mouseClicked(MouseEvent e) {
-        Point p = e.getPoint();
-        if (state == GameState.LEVEL_UP) {
-            for (int i = 0; i < activeUpgradeChoices.size(); i++) {
-                if (upgradeCardBounds[i] != null && upgradeCardBounds[i].contains(p)) {
-                    selectUpgrade(i);
-                    break;
-                }
-            }
-        } else if (state == GameState.GAME_OVER) {
-            initGame();
-        }
-    }
-
-    @Override
-    public void mouseMoved(MouseEvent e) {
-        Point p = e.getPoint();
-        if (state == GameState.LEVEL_UP) {
-            hoveredCardIndex = -1;
-            for (int i = 0; i < activeUpgradeChoices.size(); i++) {
-                if (upgradeCardBounds[i] != null && upgradeCardBounds[i].contains(p)) {
-                    hoveredCardIndex = i;
-                    break;
-                }
-            }
-        }
-    }
-
-    @Override public void mousePressed(MouseEvent e) {}
-    @Override public void mouseReleased(MouseEvent e) {}
-    @Override public void mouseEntered(MouseEvent e) {}
-    @Override public void mouseExited(MouseEvent e) {}
-    @Override public void mouseDragged(MouseEvent e) {}
 }

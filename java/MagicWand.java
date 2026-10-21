@@ -1,85 +1,22 @@
 import java.awt.Color;
-import java.awt.Graphics2D;
-import java.util.Comparator;
-import java.util.List;
-
-/**
- * Gậy phép Ma thuật (Magic Wand).
- * Tự động tìm mục tiêu quái gần nhất và bắn các quả cầu năng lượng truy đuổi.
- */
 public class MagicWand extends Weapon {
-    private int projectileCount = 1;
-    private double projectileSpeed = 8.0;
-
-    public MagicWand() {
-        super("Magic Wand", 40, 15); // Bắn mỗi 40 frame (~0.67s)
-    }
-
-    @Override
-    public void update(Player player, List<Enemy> enemies, List<Projectile> projectiles, List<DamageText> damageTexts, Sound sound) {
-        timer++;
-        if (timer >= cooldown) {
-            timer = 0;
-            if (enemies.isEmpty()) return;
-
-            // Tìm quái gần người chơi nhất
-            Enemy target = enemies.stream()
-                .filter(e -> !e.isDead())
-                .min(Comparator.comparingDouble(e -> Math.hypot(e.getCenterX() - player.getCenterX(), e.getCenterY() - player.getCenterY())))
-                .orElse(null);
-
-            if (target != null) {
-                double targetDx = target.getCenterX() - player.getCenterX();
-                double targetDy = target.getCenterY() - player.getCenterY();
-                double dist = Math.hypot(targetDx, targetDy);
-
-                if (dist > 0) {
-                    double baseAngle = Math.atan2(targetDy, targetDx);
-                    double spread = 0.2; // Độ tỏa góc bắn khi bắn nhiều đạn
-
-                    for (int i = 0; i < projectileCount; i++) {
-                        double angle = baseAngle + (i - (projectileCount - 1) / 2.0) * spread;
-                        double vx = Math.cos(angle) * projectileSpeed;
-                        double vy = Math.sin(angle) * projectileSpeed;
-
-                        double dmg = currentDamage * player.getDamageMultiplier();
-                        projectiles.add(new Projectile(
-                            player.getCenterX(), player.getCenterY(),
-                            vx, vy, dmg, 6, new Color(70, 180, 255), 90
-                        ));
-                    }
-                    sound.playShoot();
-                }
-            }
+    public MagicWand() { this(false); }
+    public MagicWand(boolean evolved) { super(evolved ? WeaponId.PRISM : WeaponId.WAND, evolved ? 30 : 38); }
+    @Override protected void fire(GameWorld world) {
+        Enemy target = world.closestEnemy(world.player.getCenterX(), world.player.getCenterY(), 650, null);
+        if (target == null) return;
+        double angle = Math.atan2(target.getCenterY() - world.player.getCenterY(), target.getCenterX() - world.player.getCenterX());
+        int count = (isEvolved() ? 4 : 1 + (level - 1) / 2) + world.player.extraProjectiles();
+        for (int i = 0; i < count; i++) {
+            double a = angle + fanOffset(i, isEvolved() ? 0.15 : 0.11);
+            Projectile p = new Projectile(world.player.getCenterX(), world.player.getCenterY(),
+                Math.cos(a) * 8, Math.sin(a) * 8, (isEvolved() ? 58 : 15 + (level - 1) * 8) * world.player.getDamageMultiplier(),
+                4, Color.CYAN, 95);
+            p.pierce = isEvolved() ? 4 : 1; p.source = id; world.addProjectile(p);
         }
     }
-
-    @Override
-    public void draw(Graphics2D g2, Player player) {
-        // Vũ khí này vẽ đạn thông qua Projectile list
-    }
-
-    @Override
-    public void upgrade() {
-        level++;
-        projectileCount++; // +1 tia đạn mỗi cấp
-        currentDamage += 5; // +5 dmg mỗi cấp
-    }
-
-    @Override
-    public String getDescription() {
-        return String.format("Bắn %d tia phép | Sát thương: %.0f | Hồi chiêu: %d frame",
-            projectileCount, currentDamage, cooldown);
-    }
-
-    @Override
-    public Weapon copy() {
-        MagicWand clone = new MagicWand();
-        clone.level = this.level;
-        clone.projectileCount = this.projectileCount;
-        clone.projectileSpeed = this.projectileSpeed;
-        clone.currentDamage = this.currentDamage;
-        clone.cooldown = this.cooldown;
-        return clone;
+    @Override public String getDescription() {
+        return (isEvolved() ? 4 : 1 + (level - 1) / 2) + " tia × " + (isEvolved() ? 58 : 15 + (level - 1) * 8)
+            + " sát thương. Hồi " + cooldownText() + ". Tự nhắm; " + (isEvolved() ? "xuyên 4 mục tiêu." : "ưu tiên tia chính giữa.");
     }
 }

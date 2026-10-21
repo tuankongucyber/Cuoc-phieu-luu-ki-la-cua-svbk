@@ -8,6 +8,8 @@ import java.util.List;
  * Có khả năng lướt né đạn vuông góc 2 lần khi phát hiện đạn bay tới gần.
  */
 public class NinjaZombie extends Zombie {
+    private java.util.Random random = new java.util.Random(0);
+    public void setRandom(java.util.Random random) { this.random = random; }
     private int dodgeCount = 2; // Tối đa 2 lần né đạn
     private int dodgeCooldown = 0; // Thời gian chờ giữa 2 lần né để không bị giật liên tục
     private int dodgeCooldownFrames = 25;
@@ -92,7 +94,7 @@ public class NinjaZombie extends Zombie {
             double perpY = p.getVx() / pSpeed;
 
             // Chọn ngẫu nhiên lướt sang trái hoặc sang phải của đường đạn
-            if (Math.random() < 0.5) {
+            if (random.nextBoolean()) {
                 perpX = -perpX;
                 perpY = -perpY;
             }
@@ -103,8 +105,8 @@ public class NinjaZombie extends Zombie {
             this.y += perpY * dashDistance;
         } else {
             // Nếu đạn không có vận tốc, lướt ngẫu nhiên ra xa
-            this.x += (Math.random() - 0.5) * 60;
-            this.y += (Math.random() - 0.5) * 60;
+            this.x += (random.nextDouble() - 0.5) * 60;
+            this.y += (random.nextDouble() - 0.5) * 60;
         }
 
         dodgeCount--;

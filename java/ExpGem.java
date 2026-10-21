@@ -50,4 +50,5 @@ public class ExpGem extends DropItem {
     }
 
     public int getExpValue() { return expValue; }
+    public void merge(int amount) { expValue += amount; }
 }

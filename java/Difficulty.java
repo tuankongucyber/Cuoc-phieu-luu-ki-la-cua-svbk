@@ -26,4 +26,8 @@ public enum Difficulty {
     }
 
     @Override public String toString() { return label; }
+    public int bulletCount(int normal) {
+        return Math.max(1, normal + (this == EASY ? -2 : this == HARD ? 2 : 0));
+    }
+    public double bulletSpeed() { return this == EASY ? 0.85 : this == HARD ? 1.12 : 1; }
 }

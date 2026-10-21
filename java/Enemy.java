@@ -6,6 +6,7 @@ import java.awt.Graphics2D;
  * Kế thừa Entity, cung cấp cơ chế di chuyển bám đuổi nhân vật và rơi phần thưởng khi chết.
  */
 public abstract class Enemy extends Entity {
+    double previousCenterX, previousCenterY;
     protected double contactDamage;
     protected int expReward;
     protected Color mainColor;
@@ -15,6 +16,8 @@ public abstract class Enemy extends Entity {
         this.contactDamage = contactDamage;
         this.expReward = expReward;
         this.mainColor = mainColor;
+        previousCenterX = x + width / 2.0;
+        previousCenterY = y + height / 2.0;
     }
 
     /**
@@ -60,6 +63,7 @@ public abstract class Enemy extends Entity {
     }
 
     public double getContactDamage() { return contactDamage; }
+    public double bodyRadius() { return Math.min(width, height) * 0.45; }
     public void applyDifficulty(Difficulty difficulty) {
         maxHp *= difficulty.enemyHealth;
         hp = maxHp;

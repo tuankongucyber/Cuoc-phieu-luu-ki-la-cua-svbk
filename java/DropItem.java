@@ -17,18 +17,25 @@ public abstract class DropItem {
     }
 
     public void update(Player player) {
+        if (collected) return;
         double dx = player.getCenterX() - x;
         double dy = player.getCenterY() - y;
         double dist = Math.hypot(dx, dy);
+        if (dist < 18) {
+            applyEffect(player);
+            collected = true;
+            return;
+        }
 
         // Nếu người chơi ở trong phạm vi nhặt (Magnet Radius)
         if (dist < player.getPickupRadius()) {
             magnetSpeed += 0.4; // Tăng dần tốc độ hút
-            x += (dx / dist) * magnetSpeed;
-            y += (dy / dist) * magnetSpeed;
+            double step = Math.min(dist, magnetSpeed);
+            x += (dx / dist) * step;
+            y += (dy / dist) * step;
 
             // Khi chạm vào người chơi
-            if (dist < 18) {
+            if (dist - step <= 18) {
                 applyEffect(player);
                 collected = true;
             }

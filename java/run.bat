@@ -1,11 +1,20 @@
 @echo off
-title Vampire Survivors Game
-echo Dang bien dich va khoi chay game...
-
-"C:\Program Files\Java\jdk-27\bin\javac.exe" *.java
-if %errorlevel% equ 0 (
-    "C:\Program Files\Java\jdk-27\bin\java.exe" Main
-) else (
-    echo [LÔI] Bien dich thất bại! Kiem tra lai code Java.
+setlocal
+cd /d "%~dp0"
+title SVBK - Danmaku Survivors
+where javac >nul 2>nul
+if errorlevel 1 (
+    echo Can cai JDK 17+ va them Java vao PATH.
     pause
+    exit /b 1
 )
+set "BUILD_DIR=%TEMP%\svbk-game-%RANDOM%-%RANDOM%"
+mkdir "%BUILD_DIR%"
+javac -encoding UTF-8 -d "%BUILD_DIR%" *.java
+if errorlevel 1 (
+    echo Bien dich that bai.
+    pause
+    exit /b 1
+)
+java -cp "%BUILD_DIR%" Main
+if errorlevel 1 pause
