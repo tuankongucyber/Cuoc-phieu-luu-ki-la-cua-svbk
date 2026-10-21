@@ -72,8 +72,10 @@ public final class Th06BehaviorTest {
         } finally { run.dispose(); }
         String previousData = System.getProperty("svbk.th06.data");
         String previousOffline = System.getProperty("svbk.th06.offline");
+        String previousBundle = System.getProperty("svbk.th06.bundle");
         try {
             System.setProperty("svbk.th06.offline", "true");
+            System.setProperty("svbk.th06.bundle", "missing-bundle-for-test.zip");
             System.setProperty("svbk.th06.data", java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "svbk-missing-th06-data-for-test").toString());
             SwingUtilities.invokeAndWait(() -> {
                 GamePanel panel = new GamePanel(); panel.gameTimer.stop();
@@ -89,6 +91,7 @@ public final class Th06BehaviorTest {
         } finally {
             if (previousData == null) System.clearProperty("svbk.th06.data"); else System.setProperty("svbk.th06.data", previousData);
             if (previousOffline == null) System.clearProperty("svbk.th06.offline"); else System.setProperty("svbk.th06.offline", previousOffline);
+            if (previousBundle == null) System.clearProperty("svbk.th06.bundle"); else System.setProperty("svbk.th06.bundle", previousBundle);
         }
         System.out.println("PASS Th06BehaviorTest: source determinism, Bomb, lasers, UI, pause, replay, cleanup and normal run");
     }

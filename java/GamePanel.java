@@ -99,7 +99,7 @@ public final class GamePanel extends JPanel {
     }
     private void prepareBossData(Runnable onReady, Screen origin, int... stages) {
         if (preparingBossData) return;
-        if (Boolean.getBoolean("svbk.th06.offline") && !java.nio.file.Files.isRegularFile(Th06Data.directory().resolve("reference-data.zip"))) {
+        if (Boolean.getBoolean("svbk.th06.offline") && !Th06BundledData.available() && !java.nio.file.Files.isRegularFile(Th06Data.directory().resolve("reference-data.zip"))) {
             bossLoadError = "Chưa có dữ liệu Boss. Kết nối mạng hoặc chọn gói ZIP."; showMenu(origin); return;
         }
         runDataTask(progress -> Th06Setup.ensure(progress, stages), onReady, origin);
@@ -112,7 +112,7 @@ public final class GamePanel extends JPanel {
         showMenu(origin);
         dataTask = new SwingWorker<>() {
             @Override protected Void doInBackground() throws java.io.IOException {
-                preparation.run(percent -> publish(percent < 0 ? "Đang chuẩn bị script Boss…" : "Đang tải dữ liệu Boss (~54 MB)… " + percent + "%"));
+                preparation.run(percent -> publish(percent < 0 ? "Đang chuẩn bị script Boss…" : percent == 100 ? "Dữ liệu Boss đã sẵn sàng" : "Đang tải dữ liệu Boss (~54 MB)… " + percent + "%"));
                 return null;
             }
             @Override protected void process(java.util.List<String> updates) {

@@ -17,6 +17,13 @@ public final class Th06Setup {
 
     public static void ensure(IntConsumer progress, int... stages) throws IOException {
         if (Th06Data.ready(stages)) return;
+        if (Th06BundledData.available()) {
+            progress.accept(-1);
+            Th06BundledData.install();
+            if (!Th06Data.ready(stages)) throw new IOException("Gói Boss đi kèm thiếu dữ liệu.");
+            progress.accept(100);
+            return;
+        }
         Path dir = Th06Data.directory();
         Files.createDirectories(dir);
         Path pack = dir.resolve("reference-data.zip");

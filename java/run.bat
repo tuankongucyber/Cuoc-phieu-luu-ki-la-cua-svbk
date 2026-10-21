@@ -16,5 +16,11 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
+copy /y "resources\th06-boss-data.zip" "%BUILD_DIR%\th06-boss-data.zip" >nul
+if errorlevel 1 (
+    echo Thieu goi du lieu Boss di kem. Hay tai lai day du du an.
+    pause
+    exit /b 1
+)
 java -cp "%BUILD_DIR%" Main
 if errorlevel 1 pause

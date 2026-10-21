@@ -3,24 +3,22 @@ import java.util.concurrent.*;
 
 import javax.swing.*;
 
-/** Fresh-cache setup from the known local pack, without internet or external executables. */
+/** Fresh-cache setup from the shipped resource, without internet or an existing data pack. */
 public final class Th06SetupIntegrationTest {
     static void check(boolean value, String message) {
         if (!value) throw new AssertionError(message);
     }
 
     public static void main(String[] args) throws Exception {
-        Path source = Th06Data.directory().resolve("reference-data.zip");
-        check(
-                Files.isRegularFile(source),
-                "integration fixture needs the known reference-data.zip");
+        check(Th06BundledData.available(), "Boss resource ships with the game");
         Path fresh = Files.createTempDirectory("svbk-setup-integration-");
         String previous = System.getProperty("svbk.th06.data");
+        String previousOffline = System.getProperty("svbk.th06.offline");
         GamePanel[] panel = new GamePanel[1];
         CountDownLatch complete = new CountDownLatch(1);
         try {
-            Files.copy(source, fresh.resolve("reference-data.zip"));
             System.setProperty("svbk.th06.data", fresh.toString());
+            System.setProperty("svbk.th06.offline", "true");
             SwingUtilities.invokeAndWait(
                     () -> {
                         panel[0] = new GamePanel();
@@ -58,6 +56,7 @@ public final class Th06SetupIntegrationTest {
                                 panel[0].bossLoadError.isEmpty()
                                         && Th06Data.ready(1, 2, 3, 4, 5, 6, 7),
                                 "all real scripts and metadata extracted");
+                        check(!Files.exists(fresh.resolve("reference-data.zip")), "no downloaded 54 MB pack is needed");
                         panel[0].showMenu(GamePanel.Screen.BOSS_TEST);
                         panel[0].startOriginalBoss(42, Th06BossId.SAKUYA, 0);
                         check(
@@ -81,6 +80,8 @@ public final class Th06SetupIntegrationTest {
                     });
             if (previous == null) System.clearProperty("svbk.th06.data");
             else System.setProperty("svbk.th06.data", previous);
+            if (previousOffline == null) System.clearProperty("svbk.th06.offline");
+            else System.setProperty("svbk.th06.offline", previousOffline);
             try (var files = Files.list(fresh)) {
                 for (Path file : files.toList()) Files.delete(file);
             }

@@ -87,7 +87,9 @@ public final class Th06SetupTest {
                         "failed downloads leave no partial file");
             }
             String previous = System.getProperty("svbk.th06.data");
+            String previousBundle = System.getProperty("svbk.th06.bundle");
             try {
+                System.setProperty("svbk.th06.bundle", "missing-bundle-for-test.zip");
                 System.setProperty("svbk.th06.data", dir.toString());
                 Files.delete(target);
                 Files.createFile(dir.resolve("ecldata7.ecl"));
@@ -113,6 +115,8 @@ public final class Th06SetupTest {
             } finally {
                 if (previous == null) System.clearProperty("svbk.th06.data");
                 else System.setProperty("svbk.th06.data", previous);
+                if (previousBundle == null) System.clearProperty("svbk.th06.bundle");
+                else System.setProperty("svbk.th06.bundle", previousBundle);
             }
         } finally {
             server.stop(0);

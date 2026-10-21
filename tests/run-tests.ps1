@@ -7,7 +7,8 @@ $sources = @((Get-ChildItem -LiteralPath (Join-Path $projectDir 'java') -Filter 
     @((Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.java').FullName)
 & javac --release 17 -encoding UTF-8 -Xlint:all -d $buildDir @sources
 if ($LASTEXITCODE -ne 0) { throw 'Compilation failed' }
-foreach ($test in @('GameplayTest', 'BossReworkTest', 'GameMenuTest', 'BossPracticeTest', 'EosdPatternTest', 'Th06DataTest', 'Th06SetupTest', 'PatternSurvivalTest', 'BossPreviewTest')) {
+Copy-Item -LiteralPath (Join-Path $projectDir 'java\resources\th06-boss-data.zip') -Destination $buildDir -Force
+foreach ($test in @('GameplayTest', 'BossReworkTest', 'GameMenuTest', 'BossPracticeTest', 'EosdPatternTest', 'Th06DataTest', 'Th06SetupTest', 'Th06BundledDataTest', 'PatternSurvivalTest', 'BossPreviewTest')) {
     & java '-Djava.awt.headless=true' '-Dsvbk.legacyBosses=true' -cp $buildDir $test $buildDir
     if ($LASTEXITCODE -ne 0) { throw "$test failed" }
 }

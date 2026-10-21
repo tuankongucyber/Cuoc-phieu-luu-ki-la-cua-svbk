@@ -3,7 +3,7 @@ import java.nio.file.*;
 import java.util.Locale;
 import java.util.zip.ZipFile;
 
-/** Original game scripts/metadata stay in a local cache, never in the Git checkout. */
+/** Resolves the bundled Boss scripts/metadata into the game's writable local cache. */
 public final class Th06Data {
     private Th06Data() {}
     public static Path directory() {
@@ -12,7 +12,7 @@ public final class Th06Data {
         String local = System.getenv("LOCALAPPDATA");
         return Path.of(local == null ? System.getProperty("user.home") : local, "SVBK", "TH06Reference");
     }
-    public static boolean available() { return ready(2, 6) || nonempty(directory().resolve("reference-data.zip")); }
+    public static boolean available() { return ready(2, 6) || Th06BundledData.available() || nonempty(directory().resolve("reference-data.zip")); }
     public static boolean ready(int... stages) {
         Path dir = directory();
         if (!nonempty(dir.resolve("etama3.anm")) || !nonempty(dir.resolve("etama4.anm"))) return false;
@@ -40,6 +40,7 @@ public final class Th06Data {
         Path dir = directory(); Files.createDirectories(dir);
         Path script = dir.resolve("ecldata" + stage + ".ecl");
         if (ready(stage)) return script;
+        if (Th06BundledData.install() && ready(stage)) return script;
         Path pack = dir.resolve("reference-data.zip");
         if (!Files.isRegularFile(pack)) throw new IOException("Thiếu dữ liệu TH06 trong " + dir);
         try (ZipFile zip = new ZipFile(pack.toFile())) {

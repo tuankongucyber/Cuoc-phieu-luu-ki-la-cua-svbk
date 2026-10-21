@@ -9,9 +9,9 @@ Cần **JDK 17 trở lên**, với `java` và `javac` có trong PATH. Trên Wind
 .\java\run.bat
 ~~~
 
-Lần đầu, bấm **Bắt đầu** hoặc **Đánh Boss đã chọn**: game tự tải khoảng **54 MB dữ liệu Boss**, hiện tiến độ, kiểm tra dữ liệu rồi tự vào game. Các lần sau chơi offline; toàn bộ mã game vẫn chạy bằng Java.
+**Dữ liệu của toàn bộ 14 trận Boss đã đóng gói sẵn trong dự án** (`java/resources/th06-boss-data.zip`, khoảng 52 KB). Tải/clone dự án rồi chạy `java/run.bat` là chơi offline được ngay; không cần tải thêm gói 54 MB. Toàn bộ mã game vẫn là Java.
 
-Nếu tải lỗi hoặc mạng chặn GitHub, dùng nút **Chọn gói ZIP dữ liệu…**. Có thể chọn `reference-data.zip` từ cache của máy đã chuẩn bị (`%LOCALAPPDATA%/SVBK/TH06Reference/`). Nguồn và cách chuẩn bị thủ công: [docs/TH06_PORT.md](docs/TH06_PORT.md).
+Nguồn dữ liệu và cách đóng gói: [docs/TH06_PORT.md](docs/TH06_PORT.md). Nếu tự build JAR, đặt `th06-boss-data.zip` ở gốc classpath/JAR; `run.bat` đã tự xử lý bước này.
 
 ## Điều khiển
 
