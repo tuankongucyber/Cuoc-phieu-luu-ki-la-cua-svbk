@@ -8,11 +8,6 @@ Cần **JDK 17 trở lên**, với `java` và `javac` có trong PATH. Trên Wind
 ~~~powershell
 .\java\run.bat
 ~~~
-
-**Dữ liệu của toàn bộ 14 trận Boss đã đóng gói sẵn trong dự án** (`java/resources/th06-boss-data.zip`, khoảng 52 KB). Tải/clone dự án rồi chạy `java/run.bat` là chơi offline được ngay; không cần tải thêm gói 54 MB. Toàn bộ mã game vẫn là Java.
-
-Nguồn dữ liệu và cách đóng gói: [docs/TH06_PORT.md](docs/TH06_PORT.md). Nếu tự build JAR, đặt `th06-boss-data.zip` ở gốc classpath/JAR; `run.bat` đã tự xử lý bước này.
-
 ## Điều khiển
 
 | Phím | Tác dụng |
